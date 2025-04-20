@@ -32,3 +32,10 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
+
+# Add these lines to existing .gitignore
+.env
+.env.local
+.env.development
+.env.production
+firebase-debug.log
