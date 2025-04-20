@@ -1,0 +1,71 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isDriver() {
+      return isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'driver';
+    }
+
+    function isCustomer() {
+      return isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'customer';
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // User profiles
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isOwner(userId);
+      allow update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin() || isOwner(userId);
+    }
+
+    // Orders
+    match /orders/{orderId} {
+      allow create: if isAuthenticated() && (isCustomer() || isAdmin());
+      allow read: if isAuthenticated() && (
+        resource.data.customerId == request.auth.uid ||
+        resource.data.driverId == request.auth.uid ||
+        isAdmin()
+      );
+      allow update: if isAuthenticated() && (
+        (isDriver() && resource.data.driverId == request.auth.uid) ||
+        (isCustomer() && resource.data.customerId == request.auth.uid) ||
+        isAdmin()
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Driver locations
+    match /driverLocations/{driverId} {
+      allow read: if isAuthenticated();
+      allow write: if isDriver() && isOwner(driverId);
+    }
+
+    // Ratings
+    match /ratings/{ratingId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isCustomer();
+      allow update, delete: if isAdmin();
+    }
+
+    // System settings
+    match /settings/{settingId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+  }
+} 
