@@ -18,6 +18,7 @@ import OrderItem from '../../../components/OrderItem';
 import { Plus as PlusIcon, PackageOpen, Map, MapPin, Truck as TruckIcon } from 'lucide-react-native';
 
 export default function CustomerHomeScreen() {
+  //test
   const { user } = useAuth();
   const { orders, loading } = useOrders(user?.id || null, user?.role || null);
   const { getCurrentLocation } = useLocation();
