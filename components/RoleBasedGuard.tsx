@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { useAuth } from '../hooks/useAuth';
 import { UserRole } from '../types';
@@ -15,8 +15,22 @@ export default function RoleBasedGuard({
   children, 
   fallback 
 }: RoleBasedGuardProps) {
-  const { user, loading } = useAuth();
+  const { user, loading, error, clearError } = useAuth();
   const router = useRouter();
+
+  useEffect(() => {
+    // Clear any auth errors when the component mounts or unmounts
+    clearError();
+    return () => clearError();
+  }, []);
+
+  useEffect(() => {
+    // If there's no user and we're not loading, redirect to login
+    if (!loading && !user) {
+      clearError();
+      router.replace('/login');
+    }
+  }, [user, loading]);
 
   if (loading) {
     return (
@@ -27,14 +41,8 @@ export default function RoleBasedGuard({
     );
   }
 
-  // If user is not authenticated, redirect to login
-  if (!user) {
-    router.replace('/login');
-    return null;
-  }
-
   // If user's role is not in allowed roles, show fallback or unauthorized message
-  if (!allowedRoles.includes(user.role as UserRole)) {
+  if (user && !allowedRoles.includes(user.role as UserRole)) {
     if (fallback) {
       return <>{fallback}</>;
     }

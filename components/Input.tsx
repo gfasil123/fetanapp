@@ -8,7 +8,8 @@ import {
   ViewStyle, 
   TextStyle,
   KeyboardTypeOptions,
-  Platform 
+  Platform,
+  TextInputProps 
 } from 'react-native';
 
 type InputProps = {
@@ -28,6 +29,8 @@ type InputProps = {
   disabled?: boolean;
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
   maxLength?: number;
+  textContentType?: TextInputProps['textContentType'];
+  autoComplete?: TextInputProps['autoComplete'];
 };
 
 export default function Input({
@@ -47,6 +50,8 @@ export default function Input({
   disabled = false,
   autoCapitalize = 'none',
   maxLength,
+  textContentType,
+  autoComplete,
 }: InputProps) {
   return (
     <View style={[styles.container, containerStyle]}>
@@ -79,6 +84,8 @@ export default function Input({
           editable={!disabled}
           autoCapitalize={autoCapitalize}
           maxLength={maxLength}
+          textContentType={textContentType}
+          autoComplete={autoComplete}
         />
         
         {rightIcon && <View style={styles.iconContainer}>{rightIcon}</View>}

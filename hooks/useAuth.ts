@@ -18,6 +18,9 @@ export function useAuth() {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setError(null); // Clear any previous errors
+      setLoading(true);
+      
       if (firebaseUser) {
         try {
           const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
@@ -28,11 +31,14 @@ export function useAuth() {
             });
           } else {
             setUser(null);
+            await firebaseSignOut(auth); // Sign out if no user document exists
+            setError('User account not found');
           }
         } catch (err) {
           console.error('Error fetching user data:', err);
           setError('Failed to fetch user data');
           setUser(null);
+          await firebaseSignOut(auth);
         }
       } else {
         setUser(null);
@@ -40,7 +46,10 @@ export function useAuth() {
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      setError(null); // Clear errors on cleanup
+    };
   }, []);
 
   const signUp = async (
@@ -112,12 +121,18 @@ export function useAuth() {
     }
   };
 
+  // Add a method to clear errors
+  const clearError = () => {
+    setError(null);
+  };
+
   return {
     user,
     loading,
     error,
     signUp,
     signIn,
-    signOut
+    signOut,
+    clearError
   };
 }

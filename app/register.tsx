@@ -95,6 +95,8 @@ export default function RegisterScreen() {
               placeholder="Enter your full name"
               leftIcon={<User size={20} color="#666" />}
               autoCapitalize="words"
+              textContentType="name"
+              autoComplete="name"
             />
 
             <Input
@@ -105,6 +107,8 @@ export default function RegisterScreen() {
               keyboardType="email-address"
               leftIcon={<Mail size={20} color="#666" />}
               autoCapitalize="none"
+              textContentType="emailAddress"
+              autoComplete="email"
             />
 
             <Input
@@ -114,6 +118,8 @@ export default function RegisterScreen() {
               placeholder="Enter your phone number"
               keyboardType="phone-pad"
               leftIcon={<Phone size={20} color="#666" />}
+              textContentType="telephoneNumber"
+              autoComplete="tel"
             />
 
             <Input
@@ -123,6 +129,8 @@ export default function RegisterScreen() {
               placeholder="Create a password"
               secureTextEntry
               leftIcon={<Lock size={20} color="#666" />}
+              textContentType="newPassword"
+              autoComplete="new-password"
             />
 
             <Input
@@ -132,6 +140,8 @@ export default function RegisterScreen() {
               placeholder="Confirm your password"
               secureTextEntry
               leftIcon={<Lock size={20} color="#666" />}
+              textContentType="newPassword"
+              autoComplete="new-password"
             />
 
             <Text style={styles.roleLabel}>I want to register as:</Text>

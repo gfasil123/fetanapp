@@ -1,43 +1,31 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, initializeAuth, getReactNativePersistence } from 'firebase/auth';
+import { getAuth } from 'firebase/auth';
 import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { getFunctions } from 'firebase/functions';
-import Constants from 'expo-constants';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
-const {
-  firebaseApiKey,
-  firebaseAuthDomain,
-  firebaseProjectId,
-  firebaseStorageBucket,
-  firebaseMessagingSenderId,
-  firebaseAppId,
-  firebaseMeasurementId,
-} = Constants.expoConfig?.extra || {};
+const  apiKey = "AIzaSyC0gjBqMeBoM-xsD2w7JxyW9D4mgKrpqQM"
+const projectId = "sample-firebase-ai-app-149e5"
 
-if (!firebaseApiKey || !firebaseProjectId) {
+if (!apiKey || !projectId) {
   throw new Error('Firebase configuration is missing. Please check your environment variables.');
 }
 
 const firebaseConfig = {
-  apiKey: firebaseApiKey,
-  authDomain: firebaseAuthDomain,
-  projectId: firebaseProjectId,
-  storageBucket: firebaseStorageBucket,
-  messagingSenderId: firebaseMessagingSenderId,
-  appId: firebaseAppId,
-  measurementId: firebaseMeasurementId,
+  apiKey: "AIzaSyC0gjBqMeBoM-xsD2w7JxyW9D4mgKrpqQM",
+  authDomain: "sample-firebase-ai-app-149e5.firebaseapp.com",
+  projectId: "sample-firebase-ai-app-149e5",
+  storageBucket: "sample-firebase-ai-app-149e5.firebasestorage.app",
+  messagingSenderId: "104102793060",
+  appId: "1:104102793060:web:51e8d82f0b17fba162b471"
 };
 
 // Initialize Firebase
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-// Initialize Auth with persistence
-const auth = initializeAuth(app, {
-  persistence: getReactNativePersistence(AsyncStorage)
-});
+// Initialize Auth
+const auth = getAuth(app);
 
 // Initialize other services
 const db = getFirestore(app);
