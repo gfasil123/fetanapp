@@ -5,7 +5,7 @@ import { getStorage } from 'firebase/storage';
 import { getFunctions } from 'firebase/functions';
 import { Platform } from 'react-native';
 
-const  apiKey = "AIzaSyC0gjBqMeBoM-xsD2w7JxyW9D4mgKrpqQM"
+const  apiKey = ""
 const projectId = "sample-firebase-ai-app-149e5"
 
 if (!apiKey || !projectId) {
@@ -13,12 +13,12 @@ if (!apiKey || !projectId) {
 }
 
 const firebaseConfig = {
-  apiKey: "AIzaSyC0gjBqMeBoM-xsD2w7JxyW9D4mgKrpqQM",
+  apiKey: "",
   authDomain: "sample-firebase-ai-app-149e5.firebaseapp.com",
   projectId: "sample-firebase-ai-app-149e5",
   storageBucket: "sample-firebase-ai-app-149e5.firebasestorage.app",
-  messagingSenderId: "104102793060",
-  appId: "1:104102793060:web:51e8d82f0b17fba162b471"
+  messagingSenderId: "",
+  appId: ""
 };
 
 // Initialize Firebase
