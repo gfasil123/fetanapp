@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import Input from '../components/Input';
 import Button from '../components/Button';
 import { useAuth } from '../hooks/useAuth';
-import { Mail, Lock, Truck as TruckIcon } from 'lucide-react-native';
+import { Mail, Lock, ArrowLeft, Shield } from 'lucide-react-native';
+import { theme } from './_layout';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -12,7 +13,22 @@ export default function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
-  const { signIn } = useAuth();
+  const { signIn, user, loading: authLoading, initialized } = useAuth();
+
+  // Redirect to home if already logged in
+  useEffect(() => {
+    if (initialized && !authLoading && user) {
+      // User is already logged in, redirect
+      console.log('User already logged in on login screen, redirecting...');
+      if (user.role === 'customer') {
+        router.replace('/(tabs)/customer');
+      } else if (user.role === 'driver') {
+        router.replace('/(tabs)/driver');
+      } else if (user.role === 'admin') {
+        router.replace('/(tabs)/admin');
+      }
+    }
+  }, [user, authLoading, initialized, router]);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -27,11 +43,14 @@ export default function LoginScreen() {
       const result = await signIn(email, password);
       
       if (result.success) {
-        // Redirect will happen automatically via auth hook
+        // Ensure we're redirecting to the correct place based on role
+        // The auth state will change after login, and the useEffect will handle the redirect
+        console.log('Login successful, waiting for auth state update');
       } else {
         setError(result.error || 'Invalid credentials');
       }
     } catch (err: any) {
+      console.error('Login error:', err);
       setError(err.message || 'An error occurred during login');
     } finally {
       setLoading(false);
@@ -46,18 +65,32 @@ export default function LoginScreen() {
     router.back();
   };
 
+  // Don't show login page if user is already logged in and we're redirecting
+  if (initialized && !authLoading && user) {
+    return <View style={{ flex: 1, backgroundColor: theme.colors.background }} />;
+  }
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
+      <ScrollView 
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContainer}
+      >
+        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+          <ArrowLeft size={22} color={theme.colors.text.primary} />
+        </TouchableOpacity>
+        
         <View style={styles.container}>
           <View style={styles.header}>
-            <TruckIcon size={48} color="#3366FF" />
-            <Text style={styles.title}>Welcome Back</Text>
+            <View style={styles.iconContainer}>
+              <Shield size={28} color={theme.colors.text.primary} />
+            </View>
+            <Text style={styles.title}>Sign In</Text>
             <Text style={styles.subtitle}>
-              Sign in to continue to DeliverEase
+              Enter your credentials to continue
             </Text>
           </View>
 
@@ -72,9 +105,9 @@ export default function LoginScreen() {
               label="Email"
               value={email}
               onChangeText={setEmail}
-              placeholder="Enter your email"
+              placeholder="Your email address"
               keyboardType="email-address"
-              leftIcon={<Mail size={20} color="#666" />}
+              leftIcon={<Mail size={20} color={theme.colors.text.secondary} />}
               autoCapitalize="none"
             />
 
@@ -82,9 +115,9 @@ export default function LoginScreen() {
               label="Password"
               value={password}
               onChangeText={setPassword}
-              placeholder="Enter your password"
+              placeholder="Your password"
               secureTextEntry
-              leftIcon={<Lock size={20} color="#666" />}
+              leftIcon={<Lock size={20} color={theme.colors.text.secondary} />}
             />
 
             <Button
@@ -92,7 +125,9 @@ export default function LoginScreen() {
               onPress={handleLogin}
               loading={loading}
               style={styles.button}
+              variant="primary"
               fullWidth
+              rounded
             />
 
             <View style={styles.footer}>
@@ -101,10 +136,6 @@ export default function LoginScreen() {
                 Register
               </Text>
             </View>
-
-            <Text style={styles.backLink} onPress={handleBack}>
-              Back to Home
-            </Text>
           </View>
         </View>
       </ScrollView>
@@ -113,72 +144,96 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
+  scrollView: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+  },
   scrollContainer: {
     flexGrow: 1,
-    justifyContent: 'center',
   },
   container: {
     flex: 1,
-    padding: 24,
-    backgroundColor: '#ffffff',
+    padding: theme.spacing.xl,
+    paddingTop: 0,
+    backgroundColor: theme.colors.background,
     ...Platform.select({
       web: {
         maxWidth: 480,
         marginHorizontal: 'auto',
-        paddingTop: 40,
-        paddingBottom: 40,
       },
     }),
   },
+  backButton: {
+    padding: theme.spacing.md,
+    marginTop: Platform.OS === 'ios' ? 50 : 30,
+    marginLeft: theme.spacing.md,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: theme.colors.card,
+    ...theme.shadows.sm,
+  },
   header: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: theme.spacing.xl,
+    marginTop: theme.spacing.xl * 2,
+  },
+  iconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: theme.colors.backgroundAlt,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: theme.spacing.lg,
+    ...theme.shadows.sm,
   },
   title: {
     fontSize: 28,
-    fontWeight: '700',
-    color: '#333',
-    marginTop: 16,
+    fontFamily: theme.typography.fontFamily.bold,
+    color: theme.colors.text.primary,
+    marginBottom: theme.spacing.sm,
   },
   subtitle: {
     fontSize: 16,
-    color: '#666',
-    marginTop: 8,
+    fontFamily: theme.typography.fontFamily.regular,
+    color: theme.colors.text.secondary,
+    textAlign: 'center',
   },
   form: {
     width: '100%',
   },
   button: {
-    marginTop: 8,
+    marginTop: theme.spacing.lg,
+    height: 56,
+    backgroundColor: theme.colors.navbar.background,
   },
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 24,
+    marginTop: theme.spacing.xl,
   },
   footerText: {
-    color: '#666',
+    color: theme.colors.text.secondary,
+    fontFamily: theme.typography.fontFamily.regular,
   },
   linkText: {
-    color: '#3366FF',
-    fontWeight: '600',
+    color: theme.colors.primary,
+    fontFamily: theme.typography.fontFamily.medium,
   },
   errorContainer: {
     backgroundColor: '#FFEBE9',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 24,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.lg,
     borderWidth: 1,
-    borderColor: '#FF3B30',
+    borderColor: theme.colors.danger,
   },
   errorText: {
-    color: '#FF3B30',
+    color: theme.colors.danger,
     textAlign: 'center',
-  },
-  backLink: {
-    color: '#666',
-    textAlign: 'center',
-    marginTop: 40,
-    textDecorationLine: 'underline',
+    fontFamily: theme.typography.fontFamily.medium,
   },
 });

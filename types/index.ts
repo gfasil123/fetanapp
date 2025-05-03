@@ -1,4 +1,4 @@
-export type UserRole = 'customer' | 'driver' | 'admin';
+export type UserRole = 'customer';
 
 export interface User {
   id: string;
@@ -11,17 +11,7 @@ export interface User {
   avatar?: string;
 }
 
-export interface Driver extends User {
-  role: 'driver';
-  isOnline: boolean;
-  vehicleType?: string;
-  licensePlate?: string;
-  rating?: number;
-  currentLocation?: {
-    latitude: number;
-    longitude: number;
-  };
-}
+// Driver interface removed - only customer functionality is needed
 
 export interface Customer extends User {
   role: 'customer';
@@ -48,7 +38,6 @@ export type DeliveryType = 'standard' | 'express' | 'same_day';
 export interface Order {
   id: string;
   customerId: string;
-  assignedDriverId?: string;
   pickupAddress: {
     address: string;
     latitude: number;
@@ -69,10 +58,7 @@ export interface Order {
   price: number;
   distance: number;
   status: DeliveryStatus;
-  preferredDriverId?: string;
   createdAt: Date;
-  acceptedAt?: Date;
-  pickedUpAt?: Date;
   deliveredAt?: Date;
   notes?: string;
 }

@@ -11,6 +11,7 @@ import {
   Platform,
   TextInputProps 
 } from 'react-native';
+import { theme } from '../app/_layout';
 
 type InputProps = {
   label?: string;
@@ -76,7 +77,7 @@ export default function Input({
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder}
-          placeholderTextColor="#a0a0a0"
+          placeholderTextColor={theme.colors.text.secondary}
           secureTextEntry={secureTextEntry}
           keyboardType={keyboardType}
           multiline={multiline}
@@ -98,29 +99,36 @@ export default function Input({
 
 const styles = StyleSheet.create({
   container: {
-    marginBottom: 16,
+    marginBottom: theme.spacing.lg,
     width: '100%',
   },
   label: {
     fontSize: 14,
-    marginBottom: 6,
+    marginBottom: theme.spacing.xs,
     fontWeight: '500',
-    color: '#333',
+    color: theme.colors.text.primary,
+    fontFamily: 'Inter-Medium',
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: 8,
-    backgroundColor: '#fff',
+    borderColor: '#E2E8F0',
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.card,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
   },
   input: {
     flex: 1,
     fontSize: 16,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    color: '#333',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    color: theme.colors.text.primary,
+    fontFamily: 'Inter-Regular',
     ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {}),
   },
   inputWithLeftIcon: {
@@ -130,19 +138,20 @@ const styles = StyleSheet.create({
     paddingRight: 8,
   },
   iconContainer: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
   },
   inputError: {
-    borderColor: '#FF3B30',
+    borderColor: theme.colors.danger,
   },
   inputDisabled: {
-    backgroundColor: '#f5f5f5',
-    borderColor: '#e0e0e0',
+    backgroundColor: '#f5f7fa',
+    borderColor: '#E2E8F0',
   },
   errorText: {
-    color: '#FF3B30',
+    color: theme.colors.danger,
     fontSize: 12,
-    marginTop: 4,
+    marginTop: theme.spacing.xs,
+    fontFamily: 'Inter-Regular',
   },
   inputMultiline: {
     minHeight: 100,

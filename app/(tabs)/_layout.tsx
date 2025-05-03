@@ -1,133 +1,112 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
-import { PhoneIncoming as HomeIcon, Package, User, Settings, Truck as TruckIcon, LayoutDashboard } from 'lucide-react-native';
+import { 
+  FileText,
+  UserCircle,
+  LayoutDashboard,
+  Settings
+} from 'lucide-react-native';
+import { theme } from '../_layout';
+import { View, Text } from 'react-native';
 
 export default function TabLayout() {
-  const { user } = useAuth();
-  const role = user?.role || 'customer';
+  const { loading } = useAuth();
+  
+  const getIconStyle = (focused: boolean) => ({
+    padding: theme.spacing.xxs,
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: focused ? 'rgba(255,255,255,0.15)' : 'transparent'
+  });
 
+  // Show loader while loading
+  if (loading) {
+    return (
+      <View style={{
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: theme.colors.background
+      }}>
+        <Text>Loading...</Text>
+      </View>
+    );
+  }
+
+  // Only define the 4 standard tabs - remove any customer-specific tabs
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#3366FF',
-        tabBarInactiveTintColor: '#999',
+        tabBarActiveTintColor: theme.colors.navbar.active,
+        tabBarInactiveTintColor: theme.colors.navbar.inactive,
         tabBarStyle: {
-          paddingBottom: 8,
-          paddingTop: 8,
-          height: 60,
+          backgroundColor: theme.colors.navbar.background,
+          paddingBottom: theme.spacing.sm,
+          paddingTop: theme.spacing.sm,
+          height: 68,
+          borderTopWidth: 0,
+          ...theme.shadows.lg,
+        },
+        tabBarItemStyle: {
+          paddingVertical: theme.spacing.xs,
         },
         tabBarLabelStyle: {
-          fontSize: 12,
+          fontSize: theme.typography.size.xs,
           fontWeight: '500',
+          fontFamily: theme.typography.fontFamily.medium,
+          marginTop: theme.spacing.xxs,
         },
         headerShown: false,
+        tabBarIconStyle: {
+          marginTop: theme.spacing.xxs,
+        },
       }}
     >
-      {role === 'customer' && (
-        <>
-          <Tabs.Screen
-            name="customer/index"
-            options={{
-              title: 'Home',
-              tabBarIcon: ({ color, size }) => (
-                <HomeIcon size={size} color={color} />
-              ),
-            }}
-          />
-          <Tabs.Screen
-            name="customer/orders"
-            options={{
-              title: 'Orders',
-              tabBarIcon: ({ color, size }) => (
-                <Package size={size} color={color} />
-              ),
-            }}
-          />
-          <Tabs.Screen
-            name="customer/profile"
-            options={{
-              title: 'Profile',
-              tabBarIcon: ({ color, size }) => (
-                <User size={size} color={color} />
-              ),
-            }}
-          />
-        </>
-      )}
-
-      {role === 'driver' && (
-        <>
-          <Tabs.Screen
-            name="driver/index"
-            options={{
-              title: 'Dashboard',
-              tabBarIcon: ({ color, size }) => (
-                <LayoutDashboard size={size} color={color} />
-              ),
-            }}
-          />
-          <Tabs.Screen
-            name="driver/orders"
-            options={{
-              title: 'Orders',
-              tabBarIcon: ({ color, size }) => (
-                <Package size={size} color={color} />
-              ),
-            }}
-          />
-          <Tabs.Screen
-            name="driver/profile"
-            options={{
-              title: 'Profile',
-              tabBarIcon: ({ color, size }) => (
-                <User size={size} color={color} />
-              ),
-            }}
-          />
-        </>
-      )}
-
-      {role === 'admin' && (
-        <>
-          <Tabs.Screen
-            name="admin/index"
-            options={{
-              title: 'Dashboard',
-              tabBarIcon: ({ color, size }) => (
-                <LayoutDashboard size={size} color={color} />
-              ),
-            }}
-          />
-          <Tabs.Screen
-            name="admin/orders"
-            options={{
-              title: 'Orders',
-              tabBarIcon: ({ color, size }) => (
-                <Package size={size} color={color} />
-              ),
-            }}
-          />
-          <Tabs.Screen
-            name="admin/users"
-            options={{
-              title: 'Users',
-              tabBarIcon: ({ color, size }) => (
-                <User size={size} color={color} />
-              ),
-            }}
-          />
-          <Tabs.Screen
-            name="admin/settings"
-            options={{
-              title: 'Settings',
-              tabBarIcon: ({ color, size }) => (
-                <Settings size={size} color={color} />
-              ),
-            }}
-          />
-        </>
-      )}
+      {/* Define only 4 main tabs - HOME, ORDERS, PROFILE, SETTINGS */}
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: 'Home',
+          tabBarIcon: ({ color, focused }) => (
+            <View style={getIconStyle(focused)}>
+              <LayoutDashboard size={22} color={color} />
+            </View>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="orders"
+        options={{
+          title: 'Orders',
+          tabBarIcon: ({ color, focused }) => (
+            <View style={getIconStyle(focused)}>
+              <FileText size={22} color={color} />
+            </View>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Profile',
+          tabBarIcon: ({ color, focused }) => (
+            <View style={getIconStyle(focused)}>
+              <UserCircle size={22} color={color} />
+            </View>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'Settings',
+          tabBarIcon: ({ color, focused }) => (
+            <View style={getIconStyle(focused)}>
+              <Settings size={22} color={color} />
+            </View>
+          ),
+        }}
+      />
     </Tabs>
   );
 }

@@ -1,21 +1,20 @@
 import React from 'react';
-import { 
-  TouchableOpacity, 
-  Text, 
-  StyleSheet, 
-  ActivityIndicator,
-  StyleProp,
-  ViewStyle,
-  TextStyle,
-  View
-} from 'react-native';
+import { StyleSheet, TouchableOpacity, Text, ActivityIndicator, StyleProp, ViewStyle, TextStyle } from 'react-native';
+import Animated, { 
+  useSharedValue, 
+  useAnimatedStyle, 
+  withTiming, 
+  Easing, 
+  interpolateColor,
+} from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../app/_layout';
+import * as Haptics from 'expo-haptics';
 
-type ButtonProps = {
+type AnimatedButtonProps = {
   title: string;
   onPress: () => void;
-  variant?: 'primary' | 'secondary' | 'outline' | 'danger' | 'gradient';
+  variant?: 'primary' | 'secondary' | 'outline' | 'gradient';
   size?: 'small' | 'medium' | 'large';
   loading?: boolean;
   disabled?: boolean;
@@ -24,9 +23,12 @@ type ButtonProps = {
   icon?: React.ReactNode;
   fullWidth?: boolean;
   rounded?: boolean;
+  hapticFeedback?: boolean;
 };
 
-export default function Button({
+const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+
+export default function AnimatedButton({
   title,
   onPress,
   variant = 'primary',
@@ -38,23 +40,25 @@ export default function Button({
   icon,
   fullWidth = false,
   rounded = false,
-}: ButtonProps) {
+  hapticFeedback = true,
+}: AnimatedButtonProps) {
+  const scale = useSharedValue(1);
+  const backgroundColorValue = useSharedValue(0);
+
   const getBackgroundColor = () => {
     if (disabled) return '#a0a0a0';
     
     switch (variant) {
       case 'primary':
-        return theme.colors.primary;
+        return theme.colors.navbar.background;
       case 'secondary':
         return theme.colors.secondary;
       case 'outline':
         return 'transparent';
-      case 'danger':
-        return theme.colors.danger;
       case 'gradient':
-        return 'transparent'; // Gradient handled separately
+        return 'transparent';
       default:
-        return theme.colors.primary;
+        return theme.colors.navbar.background;
     }
   };
 
@@ -63,9 +67,7 @@ export default function Button({
     
     switch (variant) {
       case 'outline':
-        return theme.colors.primary;
-      case 'secondary':
-        return theme.colors.text.contrast;
+        return theme.colors.text.primary;
       default:
         return theme.colors.text.contrast;
     }
@@ -76,7 +78,7 @@ export default function Button({
     
     switch (variant) {
       case 'outline':
-        return theme.colors.primary;
+        return theme.colors.text.primary;
       default:
         return 'transparent';
     }
@@ -85,11 +87,11 @@ export default function Button({
   const getPadding = () => {
     switch (size) {
       case 'small':
-        return { paddingVertical: 8, paddingHorizontal: 14 };
+        return { paddingVertical: 10, paddingHorizontal: 16 };
       case 'large':
-        return { paddingVertical: 16, paddingHorizontal: 28 };
+        return { paddingVertical: 18, paddingHorizontal: 32 };
       default:
-        return { paddingVertical: 12, paddingHorizontal: 20 };
+        return { paddingVertical: 14, paddingHorizontal: 24 };
     }
   };
 
@@ -111,17 +113,37 @@ export default function Button({
     return theme.borderRadius.md;
   };
 
-  // Gradient button
+  const handlePressIn = () => {
+    scale.value = withTiming(0.95, { duration: 150, easing: Easing.out(Easing.ease) });
+    backgroundColorValue.value = withTiming(1, { duration: 150, easing: Easing.out(Easing.ease) });
+    
+    if (hapticFeedback) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  };
+
+  const handlePressOut = () => {
+    scale.value = withTiming(1, { duration: 150, easing: Easing.out(Easing.ease) });
+    backgroundColorValue.value = withTiming(0, { duration: 150, easing: Easing.out(Easing.ease) });
+  };
+
+  // Simplified button without advanced animations to avoid TypeScript errors
   if (variant === 'gradient' && !disabled) {
     return (
       <TouchableOpacity
-        onPress={onPress}
+        onPress={() => {
+          if (hapticFeedback) {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          }
+          onPress();
+        }}
+        activeOpacity={0.9}
         disabled={disabled || loading}
-        activeOpacity={0.8}
         style={[
           {
             width: fullWidth ? '100%' : undefined,
             borderRadius: getBorderRadius(),
+            overflow: 'hidden',
           },
           style,
         ]}
@@ -173,15 +195,24 @@ export default function Button({
         {
           backgroundColor: getBackgroundColor(),
           borderColor: getBorderColor(),
+          borderWidth: variant === 'outline' ? 1 : 0,
           borderRadius: getBorderRadius(),
           ...getPadding(),
           width: fullWidth ? '100%' : undefined,
+          transform: [{ scale: 1 }], // Default scale
         },
         style,
       ]}
-      onPress={onPress}
+      onPress={() => {
+        if (hapticFeedback) {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
+        onPress();
+      }}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
       disabled={disabled || loading}
-      activeOpacity={0.8}
+      activeOpacity={0.9}
     >
       {loading ? (
         <ActivityIndicator color={getTextColor()} size="small" />
@@ -213,11 +244,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
     ...theme.shadows.sm,
   },
   buttonText: {
     fontWeight: '600',
     textAlign: 'center',
   },
-});
+}); 

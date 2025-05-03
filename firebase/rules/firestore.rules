@@ -5,67 +5,64 @@ service cloud.firestore {
     function isAuthenticated() {
       return request.auth != null;
     }
-
+    
     function isAdmin() {
       return isAuthenticated() && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
-
+    
     function isDriver() {
       return isAuthenticated() && 
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'driver';
     }
-
-    function isCustomer() {
-      return isAuthenticated() && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'customer';
-    }
-
+    
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
-
-    // User profiles
+    
+    // Rules for users collection
     match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isOwner(userId);
-      allow update: if isOwner(userId) || isAdmin();
-      allow delete: if isAdmin() || isOwner(userId);
-    }
-
-    // Orders
-    match /orders/{orderId} {
-      allow create: if isAuthenticated() && (isCustomer() || isAdmin());
-      allow read: if isAuthenticated() && (
-        resource.data.customerId == request.auth.uid ||
-        resource.data.driverId == request.auth.uid ||
-        isAdmin()
-      );
-      allow update: if isAuthenticated() && (
-        (isDriver() && resource.data.driverId == request.auth.uid) ||
-        (isCustomer() && resource.data.customerId == request.auth.uid) ||
-        isAdmin()
-      );
-      allow delete: if isAdmin();
-    }
-
-    // Driver locations
-    match /driverLocations/{driverId} {
-      allow read: if isAuthenticated();
-      allow write: if isDriver() && isOwner(driverId);
-    }
-
-    // Ratings
-    match /ratings/{ratingId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isCustomer();
-      allow update, delete: if isAdmin();
-    }
-
-    // System settings
-    match /settings/{settingId} {
-      allow read: if isAuthenticated();
+      // Allow users to read their own document and admins to read all
+      allow read: if isOwner(userId) || isAdmin();
+      
+      // Allow admins to write to all documents
       allow write: if isAdmin();
+      
+      // Allow users to update only their own document
+      allow update: if isOwner(userId);
+      
+      // Allow creation of user documents with their own ID
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Rules for users with driver role - allowing all authenticated users to read driver profiles
+    match /users/{userId} {
+      allow read: if isAuthenticated() && 
+        resource.data.role == 'driver';
+    }
+    
+    // Rules for orders collection
+    match /orders/{orderId} {
+      // Allow users to create orders
+      allow create: if isAuthenticated();
+      
+      // Allow users to read their own orders
+      allow read: if isAuthenticated() && 
+        (resource.data.customerId == request.auth.uid || 
+         resource.data.driverId == request.auth.uid || 
+         isAdmin());
+      
+      // Allow users to update orders they created or are assigned to
+      allow update: if isAuthenticated() && 
+        (resource.data.customerId == request.auth.uid || 
+         resource.data.driverId == request.auth.uid || 
+         isAdmin());
+    }
+    
+    // For development, you can leave this catch-all rule, but remove for production
+    match /{document=**} {
+      allow read, write: if true;
     }
   }
 } 

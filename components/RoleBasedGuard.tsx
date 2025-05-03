@@ -41,8 +41,8 @@ export default function RoleBasedGuard({
     );
   }
 
-  // If user's role is not in allowed roles, show fallback or unauthorized message
-  if (user && !allowedRoles.includes(user.role as UserRole)) {
+  // Since we only have customers now, this check is simplified
+  if (user && user.role !== 'customer') {
     if (fallback) {
       return <>{fallback}</>;
     }
@@ -51,7 +51,7 @@ export default function RoleBasedGuard({
       <View style={styles.container}>
         <Text style={styles.error}>Unauthorized Access</Text>
         <Text style={styles.text}>
-          You don't have permission to access this section.
+          Only customer accounts can access this app.
         </Text>
       </View>
     );

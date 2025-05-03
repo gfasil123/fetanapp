@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   collection, 
   addDoc, 
@@ -8,95 +8,109 @@ import {
   where, 
   onSnapshot, 
   orderBy, 
-  getDocs,
   Timestamp,
-  getDoc
+  getDoc,
+  getDocs
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase/config';
 import { Order, DeliveryStatus, DeliveryType } from '../types';
-import { Platform } from 'react-native';
 
 export function useOrders(userId: string | null, role: string | null) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Use useRef instead of state to avoid re-renders when updating
+  const unsubscribeRef = useRef<(() => void) | null>(null);
 
-  useEffect(() => {
-    if (!userId || !role) {
+  const fetchOrders = useCallback(async () => {
+    if (!userId) {
       setOrders([]);
       setLoading(false);
       return;
     }
 
-    let ordersQuery;
-    
-    if (role === 'customer') {
-      ordersQuery = query(
+    try {
+      setLoading(true);
+      
+      // Unsubscribe from any previous listener
+      if (typeof unsubscribeRef.current === 'function') {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+      }
+
+      // Only customer orders are supported now
+      const ordersQuery = query(
         collection(db, 'orders'),
         where('customerId', '==', userId),
         orderBy('createdAt', 'desc')
       );
-    } else if (role === 'driver') {
-      ordersQuery = query(
-        collection(db, 'orders'),
-        where('assignedDriverId', '==', userId),
-        orderBy('createdAt', 'desc')
+
+      // Add error handling wrapper for onSnapshot
+      const unsubscribe = onSnapshot(
+        ordersQuery,
+        (snapshot) => {
+          const ordersList: Order[] = [];
+          
+          snapshot.forEach((doc) => {
+            const data = doc.data();
+            
+            // Convert Firestore timestamps to Date objects
+            const order: Order = {
+              id: doc.id,
+              customerId: data.customerId,
+              pickupAddress: data.pickupAddress,
+              deliveryAddress: data.deliveryAddress,
+              deliveryType: data.deliveryType as DeliveryType,
+              packageDetails: data.packageDetails,
+              price: data.price,
+              distance: data.distance,
+              status: data.status as DeliveryStatus,
+              createdAt: data.createdAt?.toDate() || new Date(),
+              deliveredAt: data.deliveredAt ? data.deliveredAt.toDate() : undefined,
+              notes: data.notes
+            };
+            
+            ordersList.push(order);
+          });
+          
+          setOrders(ordersList);
+          setError(null); // Clear any previous errors
+          setLoading(false);
+        },
+        (err) => {
+          console.error('Error fetching orders:', err);
+          // Provide an empty array if there's a permission error
+          setOrders([]);
+          setError('Failed to fetch orders');
+          setLoading(false);
+        }
       );
-    } else if (role === 'admin') {
-      ordersQuery = query(
-        collection(db, 'orders'),
-        orderBy('createdAt', 'desc')
-      );
-    } else {
+
+      // Store unsubscribe function in ref instead of state
+      unsubscribeRef.current = unsubscribe;
+      
+      return unsubscribe;
+    } catch (err) {
+      console.error('Failed to set up orders listener:', err);
       setOrders([]);
+      setError('Failed to set up orders listener');
       setLoading(false);
-      return;
     }
+  // Remove unsubscribeFn from dependency array to avoid infinite loop
+  }, [userId]);
 
-    const unsubscribe = onSnapshot(
-      ordersQuery,
-      (snapshot) => {
-        const ordersList: Order[] = [];
-        
-        snapshot.forEach((doc) => {
-          const data = doc.data();
-          
-          // Convert Firestore timestamps to Date objects
-          const order: Order = {
-            id: doc.id,
-            customerId: data.customerId,
-            assignedDriverId: data.assignedDriverId,
-            pickupAddress: data.pickupAddress,
-            deliveryAddress: data.deliveryAddress,
-            deliveryType: data.deliveryType as DeliveryType,
-            packageDetails: data.packageDetails,
-            price: data.price,
-            distance: data.distance,
-            status: data.status as DeliveryStatus,
-            preferredDriverId: data.preferredDriverId,
-            createdAt: data.createdAt.toDate(),
-            acceptedAt: data.acceptedAt ? data.acceptedAt.toDate() : undefined,
-            pickedUpAt: data.pickedUpAt ? data.pickedUpAt.toDate() : undefined,
-            deliveredAt: data.deliveredAt ? data.deliveredAt.toDate() : undefined,
-            notes: data.notes
-          };
-          
-          ordersList.push(order);
-        });
-        
-        setOrders(ordersList);
-        setLoading(false);
-      },
-      (err) => {
-        console.error('Error fetching orders:', err);
-        setError('Failed to fetch orders');
-        setLoading(false);
+  useEffect(() => {
+    fetchOrders();
+    
+    // Clean up function when component unmounts
+    return () => {
+      if (typeof unsubscribeRef.current === 'function') {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
       }
-    );
-
-    return () => unsubscribe();
-  }, [userId, role]);
+    };
+  }, [fetchOrders]);
 
   const createOrder = async (
     customerId: string,
@@ -109,7 +123,6 @@ export function useOrders(userId: string | null, role: string | null) {
       description: string;
       image?: any; // from image picker
     },
-    preferredDriverId?: string,
     notes?: string
   ) => {
     setLoading(true);
@@ -155,7 +168,6 @@ export function useOrders(userId: string | null, role: string | null) {
         price,
         distance,
         status: 'pending',
-        preferredDriverId,
         createdAt: new Date(),
         notes
       };
@@ -177,8 +189,7 @@ export function useOrders(userId: string | null, role: string | null) {
 
   const updateOrderStatus = async (
     orderId: string, 
-    status: DeliveryStatus,
-    driverId?: string
+    status: DeliveryStatus
   ) => {
     setLoading(true);
     setError(null);
@@ -193,12 +204,7 @@ export function useOrders(userId: string | null, role: string | null) {
       
       const updateData: any = { status };
       
-      if (status === 'accepted' && driverId) {
-        updateData.assignedDriverId = driverId;
-        updateData.acceptedAt = Timestamp.now();
-      } else if (status === 'picked_up') {
-        updateData.pickedUpAt = Timestamp.now();
-      } else if (status === 'delivered') {
+      if (status === 'delivered') {
         updateData.deliveredAt = Timestamp.now();
       }
       
@@ -214,91 +220,13 @@ export function useOrders(userId: string | null, role: string | null) {
     }
   };
 
-  const getAvailableOrders = async (
-    driverId: string,
-    latitude: number,
-    longitude: number,
-    radiusKm: number = 10
-  ) => {
-    try {
-      const ordersQuery = query(
-        collection(db, 'orders'),
-        where('status', '==', 'pending'),
-        orderBy('createdAt', 'desc')
-      );
-      
-      const snapshot = await getDocs(ordersQuery);
-      const availableOrders: Order[] = [];
-      
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        
-        // Check if this driver is preferred for the order
-        const isPreferred = data.preferredDriverId === driverId;
-        
-        // Calculate distance from driver to pickup
-        const distanceToPickup = calculateDistance(
-          latitude,
-          longitude,
-          data.pickupAddress.latitude,
-          data.pickupAddress.longitude
-        );
-        
-        // Only include orders within the specified radius or if this driver is preferred
-        if (isPreferred || distanceToPickup <= radiusKm) {
-          const order: Order = {
-            id: doc.id,
-            customerId: data.customerId,
-            assignedDriverId: data.assignedDriverId,
-            pickupAddress: data.pickupAddress,
-            deliveryAddress: data.deliveryAddress,
-            deliveryType: data.deliveryType as DeliveryType,
-            packageDetails: data.packageDetails,
-            price: data.price,
-            distance: data.distance,
-            status: data.status as DeliveryStatus,
-            preferredDriverId: data.preferredDriverId,
-            createdAt: data.createdAt.toDate(),
-            acceptedAt: data.acceptedAt ? data.acceptedAt.toDate() : undefined,
-            pickedUpAt: data.pickedUpAt ? data.pickedUpAt.toDate() : undefined,
-            deliveredAt: data.deliveredAt ? data.deliveredAt.toDate() : undefined,
-            notes: data.notes
-          };
-          
-          // Add a temporary property to show distance from driver to pickup
-          (order as any).distanceToPickup = distanceToPickup;
-          
-          availableOrders.push(order);
-        }
-      });
-      
-      // Sort by distance and prioritize preferred orders
-      return availableOrders.sort((a, b) => {
-        // First prioritize preferred orders
-        if (a.preferredDriverId === driverId && b.preferredDriverId !== driverId) {
-          return -1;
-        }
-        if (a.preferredDriverId !== driverId && b.preferredDriverId === driverId) {
-          return 1;
-        }
-        
-        // Then sort by distance
-        return (a as any).distanceToPickup - (b as any).distanceToPickup;
-      });
-      
-    } catch (err) {
-      console.error('Get available orders error:', err);
-      throw err;
-    }
-  };
-
   return {
     orders,
     loading,
     error,
     createOrder,
     updateOrderStatus,
-    getAvailableOrders
+    fetchOrders
   };
 }
 
@@ -327,15 +255,12 @@ function deg2rad(deg: number): number {
 }
 
 function calculatePrice(distanceKm: number): number {
-  // Base price: $10 for ≤ 1km
-  // Add $10 per extra km beyond 1km
-  const basePrice = 10;
-  if (distanceKm <= 1) {
-    return basePrice;
-  }
-  
-  const additionalDistance = distanceKm - 1;
-  const additionalPrice = Math.ceil(additionalDistance) * 10;
-  
-  return basePrice + additionalPrice;
+  // Base price
+  const baseFee = 5;
+  // Price per km
+  const ratePerKm = 2;
+  // Calculate total price based on distance
+  const price = baseFee + (distanceKm * ratePerKm);
+  // Round to 2 decimal places
+  return parseFloat(price.toFixed(2));
 }
