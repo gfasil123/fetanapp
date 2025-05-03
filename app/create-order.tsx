@@ -42,9 +42,10 @@ import { addDoc, collection, serverTimestamp, getDoc, updateDoc, doc, query, whe
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase/config';
 import * as Location from 'expo-location';
+import ENV from '../config/environment';
 
-// Google Places API key - in a real app, this would be stored in environment variables
-const GOOGLE_PLACES_API_KEY = 'AIzaSyDmSyeQVo2J6ZK9KexMx3Ie2TvGLdhJPDg';
+// Get Google Places API key from environment variables
+const GOOGLE_PLACES_API_KEY = ENV.GOOGLE_PLACES_API_KEY;
 
 // Custom components for Google Places Autocomplete
 interface PlaceData {

@@ -1,52 +1,37 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, initializeAuth } from 'firebase/auth';
+import { getAuth } from 'firebase/auth';
 import { getFirestore, enableIndexedDbPersistence, connectFirestoreEmulator } from 'firebase/firestore';
 import { getStorage, connectStorageEmulator } from 'firebase/storage';
 import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import ENV from '../../config/environment';
 
-const apiKey = "AIzaSyC0gjBqMeBoM-xsD2w7JxyW9D4mgKrpqQM"
-const projectId = "sample-firebase-ai-app-149e5"
+console.log('Environment loaded in Firebase config:', ENV);
 
-if (!apiKey || !projectId) {
-  throw new Error('Firebase configuration is missing. Please check your environment variables.');
-}
-
+// Use environment variables for Firebase config
 const firebaseConfig = {
-  apiKey: "AIzaSyC0gjBqMeBoM-xsD2w7JxyW9D4mgKrpqQM",
-  authDomain: "sample-firebase-ai-app-149e5.firebaseapp.com",
-  projectId: "sample-firebase-ai-app-149e5",
-  storageBucket: "sample-firebase-ai-app-149e5.firebasestorage.app",
-  messagingSenderId: "",
-  appId: "1:104102793060:web:51e8d82f0b17fba162b471"
+  apiKey: ENV.FIREBASE_API_KEY,
+  authDomain: ENV.FIREBASE_AUTH_DOMAIN,
+  projectId: ENV.FIREBASE_PROJECT_ID,
+  storageBucket: ENV.FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: ENV.FIREBASE_MESSAGING_SENDER_ID,
+  appId: ENV.FIREBASE_APP_ID
 };
+
+// Debug log
+console.log('Using Firebase config:', firebaseConfig);
 
 // Initialize Firebase
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 // Initialize Auth
-let auth = getAuth(app);
+const auth = getAuth(app);
 
 // Initialize other services
 const db = getFirestore(app);
 const storage = getStorage(app);
 const functions = getFunctions(app);
-
-// Temporary fix for permissions issue: tell the app to use unsigned credentials
-// This bypasses all security rules for development
-// ⚠️ REMOVE THIS IN PRODUCTION
-try {
-  fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': '' // Empty auth header to force unauthenticated requests
-    }
-  }).catch(err => console.log('Initialized anonymous Firestore access'));
-} catch (error) {
-  console.log('Error initializing anonymous access, proceeding anyway');
-}
 
 // Enable offline persistence for Firestore on web
 if (Platform.OS === 'web') {
