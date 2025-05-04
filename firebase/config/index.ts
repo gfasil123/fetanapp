@@ -7,7 +7,8 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ENV from '../../config/environment';
 
-console.log('Environment loaded in Firebase config:', ENV);
+// Don't log environment variables or API keys
+console.log('Firebase config initialized');
 
 // Use environment variables for Firebase config
 const firebaseConfig = {
@@ -18,9 +19,6 @@ const firebaseConfig = {
   messagingSenderId: ENV.FIREBASE_MESSAGING_SENDER_ID,
   appId: ENV.FIREBASE_APP_ID
 };
-
-// Debug log
-console.log('Using Firebase config:', firebaseConfig);
 
 // Initialize Firebase
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();

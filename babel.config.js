@@ -12,7 +12,9 @@ module.exports = function(api) {
         allowUndefined: true
       }],
       // Transform process.env.X into string literals for direct access
-      'transform-inline-environment-variables'
+      'transform-inline-environment-variables',
+      // For handling polyfills
+      ['@babel/plugin-transform-private-methods', { loose: true }]
     ]
   };
 }; 

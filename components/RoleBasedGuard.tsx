@@ -1,36 +1,41 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
-import { useAuth } from '../hooks/useAuth';
+import { useAuth } from '../src/context/AuthContext';
 import { UserRole } from '../types';
-import { useRouter } from 'expo-router';
+import { useNavigation } from '@react-navigation/native';
 
 type RoleBasedGuardProps = {
-  allowedRoles: UserRole[];
+  allowedRoles?: UserRole[];
   children: React.ReactNode;
   fallback?: React.ReactNode;
+  roles?: UserRole[];
 };
 
 export default function RoleBasedGuard({ 
   allowedRoles, 
   children, 
-  fallback 
+  fallback,
+  roles
 }: RoleBasedGuardProps) {
   const { user, loading, error, clearError } = useAuth();
-  const router = useRouter();
+  const navigation = useNavigation<any>();
+  
+  // Support both allowedRoles and roles props for backward compatibility
+  const effectiveRoles = roles || allowedRoles || ['customer'];
 
   useEffect(() => {
     // Clear any auth errors when the component mounts or unmounts
-    clearError();
-    return () => clearError();
-  }, []);
+    if (clearError) clearError();
+    return () => { if (clearError) clearError(); };
+  }, [clearError]);
 
   useEffect(() => {
     // If there's no user and we're not loading, redirect to login
     if (!loading && !user) {
-      clearError();
-      router.replace('/login');
+      if (clearError) clearError();
+      navigation.navigate('Login');
     }
-  }, [user, loading]);
+  }, [user, loading, navigation, clearError]);
 
   if (loading) {
     return (
@@ -41,8 +46,8 @@ export default function RoleBasedGuard({
     );
   }
 
-  // Since we only have customers now, this check is simplified
-  if (user && user.role !== 'customer') {
+  // Only check roles if we have a user and roles to check against
+  if (user && effectiveRoles.length > 0 && !effectiveRoles.includes(user.role)) {
     if (fallback) {
       return <>{fallback}</>;
     }
@@ -51,7 +56,7 @@ export default function RoleBasedGuard({
       <View style={styles.container}>
         <Text style={styles.error}>Unauthorized Access</Text>
         <Text style={styles.text}>
-          Only customer accounts can access this app.
+          You don't have permission to access this section.
         </Text>
       </View>
     );

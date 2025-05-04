@@ -1,16 +1,15 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { Order } from '../types';
-import { useRouter } from 'expo-router';
 import { PackageCheck, MapPin, Clock, Truck as TruckDelivery } from 'lucide-react-native';
 
 type OrderItemProps = {
   order: Order;
-  userRole: 'customer' | 'driver' | 'admin';
+  userRole?: 'customer' | 'driver' | 'admin';
+  onPress?: () => void;
 };
 
-export default function OrderItem({ order, userRole }: OrderItemProps) {
-  const router = useRouter();
+export default function OrderItem({ order, userRole = 'customer', onPress }: OrderItemProps) {
   
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -39,22 +38,12 @@ export default function OrderItem({ order, userRole }: OrderItemProps) {
     });
   };
 
-  const handlePress = () => {
-    if (userRole === 'customer') {
-      router.push(`/customer/orders/${order.id}`);
-    } else if (userRole === 'driver') {
-      router.push(`/driver/orders/${order.id}`);
-    } else if (userRole === 'admin') {
-      router.push(`/admin/orders/${order.id}`);
-    }
-  };
-
   const statusText = order.status.charAt(0).toUpperCase() + order.status.slice(1).replace('_', ' ');
 
   return (
     <TouchableOpacity
       style={styles.container}
-      onPress={handlePress}
+      onPress={onPress}
       activeOpacity={0.7}
     >
       <View style={styles.header}>

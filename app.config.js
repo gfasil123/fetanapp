@@ -42,6 +42,9 @@ export default {
     GOOGLE_PLACES_API_KEY: process.env.GOOGLE_PLACES_API_KEY,
   },
   plugins: [
-    // Add your plugins here
+    '@react-native-firebase/app',
+    '@react-native-firebase/auth',
+    'expo-location',
+    'expo-image-picker'
   ]
 } 

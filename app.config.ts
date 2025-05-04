@@ -41,7 +41,6 @@ export default {
       }
     },
     plugins: [
-      'expo-router',
       '@react-native-firebase/app',
       '@react-native-firebase/auth',
       'expo-location',
