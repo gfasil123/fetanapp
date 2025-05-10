@@ -89,14 +89,21 @@ export default function OrderDetailsScreen({ route, navigation }) {
   const formatDate = (timestamp) => {
     if (!timestamp) return 'N/A';
     
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    try {
+      const date = timestamp && typeof timestamp.toDate === 'function' 
+        ? timestamp.toDate() 
+        : new Date(timestamp);
+      
+      return date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch (error) {
+      console.error('Error formatting date:', error);
+      return 'N/A';
+    }
   };
 
   if (loading) {

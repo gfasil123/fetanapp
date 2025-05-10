@@ -19,6 +19,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useOrders } from '../hooks/useOrders';
 import { useLocation } from '../hooks/useLocation';
 import Button from '../components/Button';
+import AddressAutocomplete, { AddressData, AddressAutocompleteRef } from './components/AddressAutocomplete';
 import { 
   ArrowLeft, 
   PackageOpen, 
@@ -55,157 +56,6 @@ interface PlaceData {
     longitude: number;
   };
 }
-
-interface GooglePlacesAutocompleteProps {
-  placeholder: string;
-  value: string;
-  onChangeText: (text: string) => void;
-  onPlaceSelected: (place: PlaceData) => void;
-}
-
-interface Prediction {
-  place_id: string;
-  description: string;
-}
-
-const GooglePlacesAutocomplete = ({ 
-  placeholder, 
-  value, 
-  onChangeText, 
-  onPlaceSelected 
-}: GooglePlacesAutocompleteProps) => {
-  const [predictions, setPredictions] = useState<Prediction[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [showPredictions, setShowPredictions] = useState(false);
-  const timeout = useRef<NodeJS.Timeout | null>(null);
-
-  const handleTextChange = (text: string) => {
-    onChangeText(text);
-    
-    // Clear any existing timeout
-    if (timeout.current) clearTimeout(timeout.current);
-    
-    // Set a timeout to fetch predictions to avoid too many API calls
-    timeout.current = setTimeout(() => {
-      if (text.length > 2) {
-        fetchPredictions(text);
-      } else {
-        setPredictions([]);
-        setShowPredictions(false);
-      }
-    }, 500);
-  };
-
-  const fetchPredictions = async (text: string) => {
-    if (!text) return;
-    
-    setIsLoading(true);
-    
-    try {
-      const response = await fetch(
-        `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(
-          text
-        )}&key=${GOOGLE_PLACES_API_KEY}&components=country:us`
-      );
-      
-      const data = await response.json();
-      
-      if (data.status === 'OK' && data.predictions) {
-        setPredictions(data.predictions);
-        setShowPredictions(true);
-      } else {
-        setPredictions([]);
-        setShowPredictions(false);
-      }
-    } catch (error) {
-      console.error('Error fetching predictions:', error);
-      setPredictions([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSelectPlace = async (placeId: string, description: string) => {
-    // Get place details
-    try {
-      const response = await fetch(
-        `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=geometry,formatted_address&key=${GOOGLE_PLACES_API_KEY}`
-      );
-      
-      const data = await response.json();
-      
-      if (data.status === 'OK' && data.result) {
-        const location = data.result.geometry.location;
-        const address = data.result.formatted_address || description;
-        
-        // Callback with place data
-        onPlaceSelected({
-          address,
-          location: {
-            latitude: location.lat,
-            longitude: location.lng
-          }
-        });
-        
-        // Update the text input and hide predictions
-        onChangeText(address);
-        setShowPredictions(false);
-      }
-    } catch (error) {
-      console.error('Error getting place details:', error);
-    }
-  };
-
-  return (
-    <View style={styles.autocompleteContainer}>
-      <View style={styles.addressInputContainer}>
-        <MapPin 
-          size={20} 
-          color={theme.colors.text.secondary}
-          style={styles.addressIcon}
-        />
-        <TextInput
-          style={styles.addressInput}
-          value={value}
-          onChangeText={handleTextChange}
-          placeholder={placeholder}
-          onFocus={() => value.length > 2 && setShowPredictions(true)}
-        />
-        {isLoading && (
-          <ActivityIndicator 
-            size="small" 
-            color={theme.colors.text.secondary} 
-          />
-        )}
-      </View>
-      
-      {showPredictions && predictions.length > 0 && (
-        <View style={styles.predictionsContainer}>
-          <FlatList
-            data={predictions}
-            keyExtractor={(item) => item.place_id}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.predictionItem}
-                onPress={() => handleSelectPlace(item.place_id, item.description)}
-              >
-                <MapPin 
-                  size={16} 
-                  color={theme.colors.text.secondary}
-                  style={styles.predictionIcon}
-                />
-                <Text style={styles.predictionText} numberOfLines={1}>
-                  {item.description}
-                </Text>
-              </TouchableOpacity>
-            )}
-            style={styles.predictionsList}
-          />
-        </View>
-      )}
-    </View>
-  );
-};
 
 const deliveryTypes = [
   { id: 'standard', name: 'Standard', description: 'Regular delivery', price: 10 },
@@ -244,6 +94,9 @@ export default function CreateOrderScreen() {
   const [cost, setCost] = useState(10);
   const [isLoading, setIsLoading] = useState(false);
 
+  const pickupAddressRef = useRef<AddressAutocompleteRef>(null);
+  const deliveryAddressRef = useRef<AddressAutocompleteRef>(null);
+
   // Pre-fill pickup address with current location
   useEffect(() => {
     const getLocation = async () => {
@@ -264,6 +117,11 @@ export default function CreateOrderScreen() {
             if (data.status === 'OK' && data.results && data.results.length > 0) {
               const address = data.results[0].formatted_address;
               setPickupAddress(address);
+              
+              // Set text in the Google Places Autocomplete input
+              if (pickupAddressRef.current) {
+                pickupAddressRef.current.setAddressText(address);
+              }
             } else {
               // Fallback to Expo Location if Google API fails
               const response = await Location.reverseGeocodeAsync({ latitude, longitude });
@@ -272,6 +130,11 @@ export default function CreateOrderScreen() {
                 const address = response[0];
                 const formattedAddress = `${address.street || ''}, ${address.city || ''}, ${address.region || ''}`;
                 setPickupAddress(formattedAddress);
+                
+                // Set text in the Google Places Autocomplete input
+                if (pickupAddressRef.current) {
+                  pickupAddressRef.current.setAddressText(formattedAddress);
+                }
               }
             }
           } catch (error) {
@@ -283,6 +146,11 @@ export default function CreateOrderScreen() {
               const address = response[0];
               const formattedAddress = `${address.street || ''}, ${address.city || ''}, ${address.region || ''}`;
               setPickupAddress(formattedAddress);
+              
+              // Set text in the Google Places Autocomplete input
+              if (pickupAddressRef.current) {
+                pickupAddressRef.current.setAddressText(formattedAddress);
+              }
             }
           }
         }
@@ -645,8 +513,8 @@ export default function CreateOrderScreen() {
         </View>
 
         <ScrollView 
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollViewContent}
+          style={[styles.scrollView, { backgroundColor: theme.colors.background }]}
+          contentContainerStyle={[styles.scrollViewContent, { backgroundColor: theme.colors.background }]}
         >
           {/* Delivery Type Selection */}
           <View style={styles.section}>
@@ -839,11 +707,11 @@ export default function CreateOrderScreen() {
             
             <View style={styles.inputContainer}>
               <Text style={styles.inputLabel}>Pickup Address</Text>
-              <GooglePlacesAutocomplete
+              <AddressAutocomplete
+                ref={pickupAddressRef}
                 placeholder="Enter pickup address"
-                value={pickupAddress}
-                onChangeText={setPickupAddress}
-                onPlaceSelected={(place) => {
+                defaultValue={pickupAddress}
+                onSelectAddress={(place: AddressData) => {
                   setPickupAddress(place.address);
                   setPickupLocation(place.location);
                 }}
@@ -852,11 +720,11 @@ export default function CreateOrderScreen() {
             
             <View style={styles.inputContainer}>
               <Text style={styles.inputLabel}>Delivery Address</Text>
-              <GooglePlacesAutocomplete
+              <AddressAutocomplete
+                ref={deliveryAddressRef}
                 placeholder="Enter delivery address"
-                value={deliveryAddress}
-                onChangeText={setDeliveryAddress}
-                onPlaceSelected={(place) => {
+                defaultValue={deliveryAddress}
+                onSelectAddress={(place: AddressData) => {
                   setDeliveryAddress(place.address);
                   setDeliveryLocation(place.location);
                 }}
@@ -1125,7 +993,7 @@ export default function CreateOrderScreen() {
             <Text style={styles.sectionTitle}>Order Summary</Text>
             
             <LinearGradient
-              colors={['#F8F8F8', '#FFFFFF']}
+              colors={[theme.colors.card, theme.colors.backgroundAlt]}
               style={styles.summaryGradient}
             >
               <View style={styles.summaryRow}>
@@ -1225,6 +1093,9 @@ const styles = StyleSheet.create({
   section: {
     marginTop: theme.spacing.lg,
     marginBottom: theme.spacing.lg,
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.lg,
   },
   sectionTitle: {
     fontSize: 18,
@@ -1240,6 +1111,7 @@ const styles = StyleSheet.create({
   deliveryTypeOption: {
     width: '48%',
     borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.card,
     overflow: 'hidden',
     ...Platform.select({
       ios: {
@@ -1253,15 +1125,20 @@ const styles = StyleSheet.create({
       },
     }),
   },
-  deliveryTypeSelected: {},
+  deliveryTypeSelected: {
+    borderColor: theme.colors.primary,
+    borderWidth: 2,
+    backgroundColor: theme.colors.primaryDark,
+  },
   deliveryTypeGradient: {
     padding: theme.spacing.md,
     borderRadius: theme.borderRadius.md,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.03)',
+    borderColor: theme.colors.border,
     height: 140,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: 'transparent',
   },
   deliveryTypeIcon: {
     width: 48,
@@ -1312,6 +1189,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: theme.colors.text.primary,
     fontFamily: theme.typography.fontFamily.regular,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
   uploadButton: {
     borderRadius: theme.borderRadius.md,
@@ -1332,10 +1211,11 @@ const styles = StyleSheet.create({
     padding: theme.spacing.xl,
     borderRadius: theme.borderRadius.md,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.03)',
+    borderColor: theme.colors.border,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
+    backgroundColor: theme.colors.backgroundAlt,
   },
   uploadText: {
     fontSize: 16,
@@ -1354,6 +1234,8 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.backgroundAlt,
     borderRadius: theme.borderRadius.md,
     paddingHorizontal: theme.spacing.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
   addressIcon: {
     marginRight: theme.spacing.sm,
@@ -1511,7 +1393,7 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   predictionsContainer: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.colors.card,
     borderRadius: theme.borderRadius.sm,
     borderWidth: 1,
     borderColor: theme.colors.border,
@@ -1520,17 +1402,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 2,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 4,
-      },
-    }),
   },
   predictionsList: {
     maxHeight: 200,

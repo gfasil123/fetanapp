@@ -57,6 +57,7 @@ export default function HomeTabScreen({ navigation }) {
   const [orderDrivers, setOrderDrivers] = useState([]);
   const [addingFavoriteId, setAddingFavoriteId] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [showAllFavoritesModal, setShowAllFavoritesModal] = useState(false);
 
   // Extract fetchRecentDriversData to useCallback to avoid recreating it on every render
   const fetchRecentDriversData = useCallback(async () => {
@@ -100,8 +101,8 @@ export default function HomeTabScreen({ navigation }) {
   // Update orders effect
   useEffect(() => {
     if (orders && orders.length > 0) {
-      // Get the 3 most recent orders
-      setRecentOrders(orders.slice(0, 3));
+      // Get the 2 most recent orders instead of 3
+      setRecentOrders(orders.slice(0, 2));
       
       // Extract unique driver IDs from recent orders
       const completedOrders = orders.filter(order => 
@@ -231,9 +232,63 @@ export default function HomeTabScreen({ navigation }) {
     }
   };
 
+  const removeDriverFromFavorites = async (driverId, driverName) => {
+    try {
+      if (!user || !user.id) {
+        Alert.alert('Error', 'User account issue. Please log out and log in again.');
+        return;
+      }
+      
+      setAddingFavoriteId(driverId); // Use the same state to show loading
+      
+      const userDocRef = doc(db, 'users', user.id);
+      const userDoc = await getDoc(userDocRef);
+      
+      if (!userDoc.exists()) {
+        Alert.alert('Error', 'User account not found. Please log out and log in again.');
+        setAddingFavoriteId(null);
+        return;
+      }
+      
+      let currentFavorites = userDoc.data().favoriteDrivers || [];
+      
+      // Remove the driver from favorites
+      const newFavorites = currentFavorites.filter(id => id !== driverId);
+      
+      await updateDoc(userDocRef, {
+        favoriteDrivers: newFavorites
+      });
+      
+      // Update local state
+      if (fetchFavoriteDrivers) {
+        await fetchFavoriteDrivers();
+      }
+      
+      // Close the modal if it's open
+      if (showAllFavoritesModal) {
+        // If we're unfavoriting the last driver, close the modal
+        if (newFavorites.length === 0) {
+          setShowAllFavoritesModal(false);
+        }
+      }
+      
+      // Don't show alert when removing to avoid disrupting the UX
+      console.log(`${driverName} has been removed from favorites.`);
+    } catch (error) {
+      console.error('Error removing driver from favorites:', error);
+      Alert.alert('Error', 'Could not remove driver from favorites. Please try again.');
+    } finally {
+      setAddingFavoriteId(null);
+    }
+  };
+
   const openAddDriverModal = () => {
     setShowDriverModal(true);
     setSearchDriverText('');
+  };
+
+  const openAllFavoritesModal = () => {
+    setShowAllFavoritesModal(true);
   };
 
   // Filter drivers for the search functionality
@@ -245,65 +300,50 @@ export default function HomeTabScreen({ navigation }) {
       );
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <View style={styles.userInfo}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{user?.name?.charAt(0) || 'U'}</Text>
-            </View>
-            <View style={styles.userText}>
-              <Text style={styles.greeting}>Hello 👋</Text>
-              <Text style={styles.userName}>{user?.name?.split(' ')[0] || 'there'}</Text>
-            </View>
-          </View>
-          <TouchableOpacity style={styles.notificationBtn}>
-            <Bell size={22} color={theme.colors.text.primary} />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <View style={styles.balanceCard}>
+    <ScrollView 
+      style={styles.container} 
+      contentContainerStyle={styles.contentContainer}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+      }
+    >
+      {/* Purple header with action buttons matching reference image */}
+      <View style={styles.headerGradient}>
         <LinearGradient
           colors={[theme.colors.gradient.primary[0], theme.colors.gradient.primary[1]]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
-          style={styles.gradientCard}
+          style={styles.gradientHeader}
         >
-          <View style={styles.cardHeader}>
-            <Text style={styles.balanceTitle}>TOTAL DELIVERIES</Text>
-            <TouchableOpacity style={styles.cardAction}>
-              <Activity size={20} color="#FFF" />
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.balanceAmount}>
-            {(orders?.length || 0).toString()}
-          </Text>
-          <View style={styles.cardActions}>
-            <TouchableOpacity style={styles.actionButton} onPress={handleCreateOrder}>
-              <View style={styles.actionIcon}>
-                <PlusIcon size={18} color="#FFF" />
-              </View>
-              <Text style={styles.actionText}>New</Text>
+          <View style={styles.headerActions}>
+            <TouchableOpacity 
+              style={styles.headerAction}
+              onPress={handleCreateOrder}
+            >
+              <PlusIcon size={16} color="#FFFFFF" />
+              <Text style={styles.headerActionText}>New</Text>
             </TouchableOpacity>
             
-            <TouchableOpacity style={styles.actionButton} onPress={() => {}}>
-              <View style={styles.actionIcon}>
-                <Clock size={18} color="#FFF" />
-              </View>
-              <Text style={styles.actionText}>History</Text>
+            <TouchableOpacity 
+              style={styles.headerAction}
+              onPress={() => {}}
+            >
+              <Clock size={16} color="#FFFFFF" />
+              <Text style={styles.headerActionText}>History</Text>
             </TouchableOpacity>
             
-            <TouchableOpacity style={styles.actionButton} onPress={() => {}}>
-              <View style={styles.actionIcon}>
-                <Calendar size={18} color="#FFF" />
-              </View>
-              <Text style={styles.actionText}>Schedule</Text>
+            <TouchableOpacity 
+              style={styles.headerAction}
+              onPress={() => {}}
+            >
+              <Calendar size={16} color="#FFFFFF" />
+              <Text style={styles.headerActionText}>Schedule</Text>
             </TouchableOpacity>
           </View>
         </LinearGradient>
       </View>
 
+      {/* Quick action buttons with circular colored icons */}
       <View style={styles.quickActions}>
         <TouchableOpacity 
           style={styles.quickAction}
@@ -319,8 +359,8 @@ export default function HomeTabScreen({ navigation }) {
           style={styles.quickAction}
           onPress={handleViewAllOrders}
         >
-          <View style={[styles.quickActionIcon, { backgroundColor: '#FFF5E6' }]}>
-            <TruckIcon size={24} color={theme.colors.accent1} />
+          <View style={[styles.quickActionIcon, { backgroundColor: '#FEE2E2' }]}>
+            <TruckIcon size={24} color="#FA6464" />
           </View>
           <Text style={styles.quickActionText}>Track Orders</Text>
         </TouchableOpacity>
@@ -329,37 +369,53 @@ export default function HomeTabScreen({ navigation }) {
           style={styles.quickAction}
           onPress={() => {}}
         >
-          <View style={[styles.quickActionIcon, { backgroundColor: '#E6FFF1' }]}>
-            <Map size={24} color={theme.colors.accent2} />
+          <View style={[styles.quickActionIcon, { backgroundColor: '#E0F2E9' }]}>
+            <Map size={24} color="#50C878" />
           </View>
           <Text style={styles.quickActionText}>View Map</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Favorite Drivers Section */}
-      <View style={styles.contactsSection}>
-        <Text style={styles.sectionTitle}>Favorite Drivers</Text>
+      {/* Favorite Drivers Section - Updated to match the image design */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Favorite Drivers</Text>
+          {favoriteDrivers.length > 3 && (
+            <TouchableOpacity onPress={openAllFavoritesModal} style={styles.viewAllBtn}>
+              <Text style={styles.viewAllText}>View All</Text>
+              <ChevronRight size={16} color={theme.colors.primary} />
+            </TouchableOpacity>
+          )}
+        </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.contactsList}>
           {loadingDrivers ? (
             <View style={styles.loadingContactItem}>
-              <ActivityIndicator size="small" color={theme.colors.text.secondary} />
+              <ActivityIndicator size="small" color={theme.colors.primary} />
               <Text style={styles.loadingText}>Loading...</Text>
             </View>
           ) : favoriteDrivers.length > 0 ? (
             <>
-              {/* Only show favorite drivers */}
-              {favoriteDrivers.map((driver) => (
+              {/* Only show first 3 favorite drivers */}
+              {favoriteDrivers.slice(0, 3).map((driver) => (
                 <View key={driver.id} style={styles.contactItem}>
                   <View style={styles.avatarContainer}>
-                    <LinearGradient
-                      colors={['#333333', '#222222']}
-                      style={styles.contactAvatar}>
-                      <Text style={[styles.contactInitial, {color: '#FFFFFF'}]}>
+                    <View style={styles.contactAvatar}>
+                      <Text style={styles.contactInitial}>
                         {driver.name ? (driver.name.split(' ').map(n => n.charAt(0)).join('').slice(0, 2).toUpperCase()) : 'D'}
                       </Text>
-                    </LinearGradient>
+                    </View>
                     <View style={styles.favoriteIconContainer}>
-                      <Heart size={14} color="#000000" fill="#FFD700" />
+                      <TouchableOpacity
+                        onPress={() => removeDriverFromFavorites(driver.id, driver.name)}
+                        style={styles.heartIconButton}
+                        disabled={addingFavoriteId === driver.id}
+                      >
+                        {addingFavoriteId === driver.id ? (
+                          <ActivityIndicator size="small" color="#FFD700" />
+                        ) : (
+                          <Heart size={14} color="#000000" fill="#FFD700" />
+                        )}
+                      </TouchableOpacity>
                     </View>
                   </View>
                   <Text style={styles.contactName}>{driver.name}</Text>
@@ -367,8 +423,8 @@ export default function HomeTabScreen({ navigation }) {
               ))}
 
               <TouchableOpacity style={styles.addNewContact} onPress={openAddDriverModal}>
-                <View style={styles.addContactCircle}>
-                  <PlusIcon size={20} color="#CCC" />
+                <View style={styles.addContactPlus}>
+                  <PlusIcon size={20} color="#FFFFFF" />
                 </View>
                 <Text style={styles.contactName}>Add</Text>
               </TouchableOpacity>
@@ -380,8 +436,8 @@ export default function HomeTabScreen({ navigation }) {
                 style={styles.addNewContact} 
                 onPress={openAddDriverModal}
               >
-                <View style={styles.addContactCircle}>
-                  <PlusIcon size={20} color="#CCC" />
+                <View style={styles.addContactPlus}>
+                  <PlusIcon size={20} color="#FFFFFF" />
                 </View>
                 <Text style={styles.contactName}>Add Favorites</Text>
               </TouchableOpacity>
@@ -392,21 +448,21 @@ export default function HomeTabScreen({ navigation }) {
       
       {/* Recent Drivers Section - only show if there are actual order drivers */}
       {orderDrivers.filter(driver => !favoriteDrivers.some(fav => fav.id === driver.id)).length > 0 && (
-        <View style={styles.contactsSection}>
-          <Text style={styles.sectionTitle}>Recent Drivers</Text>
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Recent Drivers</Text>
+          </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.contactsList}>
             {/* Show only drivers who have delivered your orders */}
             {orderDrivers
               .filter(driver => !favoriteDrivers.some(fav => fav.id === driver.id))
               .map((driver) => (
                 <View key={driver.id} style={styles.contactItem}>
-                  <LinearGradient
-                    colors={['#F5F5F5', '#FFFFFF']}
-                    style={styles.contactAvatar}>
+                  <View style={[styles.contactAvatar, styles.recentDriverAvatar]}>
                     <Text style={styles.contactInitial}>
                       {driver.name ? (driver.name.split(' ').map(n => n.charAt(0)).join('').slice(0, 2).toUpperCase()) : 'D'}
                     </Text>
-                  </LinearGradient>
+                  </View>
                   <Text style={styles.contactName}>{driver.name || 'Driver'}</Text>
                 </View>
               ))
@@ -414,10 +470,14 @@ export default function HomeTabScreen({ navigation }) {
           </ScrollView>
         </View>
       )}
-
+      
+      {/* Recent Orders section - Updated to horizontal scroll with status tracking */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent Orders</Text>
+          <View style={styles.sectionTitleContainer}>
+            <Text style={styles.sectionTitle}>Recent Orders</Text>
+            <View style={styles.sectionTitleAccent} />
+          </View>
           <TouchableOpacity onPress={handleViewAllOrders} style={styles.viewAllBtn}>
             <Text style={styles.viewAllText}>View All</Text>
             <ChevronRight size={16} color={theme.colors.primary} />
@@ -457,18 +517,161 @@ export default function HomeTabScreen({ navigation }) {
             />
           </View>
         ) : (
-          <View style={styles.ordersContainer}>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.horizontalOrdersContainer}
+            decelerationRate="fast"
+            snapToInterval={width * 0.85 + theme.spacing.lg}
+            snapToAlignment="start"
+          >
             {recentOrders.map((order) => (
-              <OrderItem 
-                key={order.id} 
-                order={order}
-                onPress={() => {
-                  // Navigate to order details
-                  navigation.navigate('OrderDetails', { orderId: order.id });
-                }}
-              />
+              <TouchableOpacity
+                key={order.id}
+                style={styles.horizontalOrderCard}
+                onPress={() => navigation.navigate('OrderDetails', { orderId: order.id })}
+                activeOpacity={0.9}
+              >
+                <View style={styles.orderCardHeader}>
+                  <View style={styles.orderIconContainer}>
+                    <PackageOpen size={20} color="#FFFFFF" />
+                  </View>
+                  <Text style={styles.orderCardTitle}>Order #{order.id.slice(0, 8)}</Text>
+                  <View style={[
+                    styles.orderStatusBadge, 
+                    { 
+                      backgroundColor: order.status === 'delivered' 
+                        ? '#50C878' 
+                        : order.status === 'in_transit' 
+                          ? '#FF9500' 
+                          : '#9D76E8'
+                    }
+                  ]}>
+                    <Text style={styles.orderStatusText}>
+                      {order.status === 'delivered' ? 'Delivered' : 
+                       order.status === 'in_transit' ? 'In Transit' : 'Pending'}
+                    </Text>
+                  </View>
+                </View>
+                
+                {/* Status Progress Indicator */}
+                <View style={styles.statusProgressContainer}>
+                  <View style={styles.statusProgressTrack}>
+                    <View 
+                      style={[
+                        styles.statusProgressFill,
+                        { 
+                          width: order.status === 'delivered' 
+                            ? '100%' 
+                            : order.status === 'in_transit' 
+                              ? '66%' 
+                              : order.status === 'accepted'
+                                ? '33%'
+                                : '10%' 
+                        }
+                      ]} 
+                    />
+                  </View>
+                  <View style={styles.statusStepsContainer}>
+                    <View style={styles.statusStep}>
+                      <View style={[
+                        styles.statusDot,
+                        { 
+                          backgroundColor: '#9D76E8',
+                          borderColor: 'rgba(157, 118, 232, 0.3)'
+                        }
+                      ]} />
+                      <Text style={styles.statusStepText}>Order Placed</Text>
+                    </View>
+                    <View style={styles.statusStep}>
+                      <View style={[
+                        styles.statusDot,
+                        { 
+                          backgroundColor: ['accepted', 'in_transit', 'delivered'].includes(order.status) 
+                            ? '#FF9500' 
+                            : 'transparent',
+                          borderColor: '#FF9500'
+                        }
+                      ]} />
+                      <Text style={[
+                        styles.statusStepText,
+                        ['accepted', 'in_transit', 'delivered'].includes(order.status) && styles.activeStatusText
+                      ]}>In Transit</Text>
+                    </View>
+                    <View style={styles.statusStep}>
+                      <View style={[
+                        styles.statusDot,
+                        { 
+                          backgroundColor: order.status === 'delivered' 
+                            ? '#50C878' 
+                            : 'transparent',
+                          borderColor: '#50C878'
+                        }
+                      ]} />
+                      <Text style={[
+                        styles.statusStepText,
+                        order.status === 'delivered' && styles.activeStatusText
+                      ]}>Delivered</Text>
+                    </View>
+                  </View>
+                </View>
+                
+                <View style={styles.orderAddresses}>
+                  <View style={styles.addressRow}>
+                    <View style={styles.addressDot}>
+                      <MapPin size={14} color="#FA6464" style={styles.addressIcon} />
+                    </View>
+                    <Text style={styles.addressText} numberOfLines={1}>
+                      {typeof order.pickupAddress === 'object' 
+                        ? order.pickupAddress?.address || 'No pickup address'
+                        : order.pickupAddress || 'No pickup address'}
+                    </Text>
+                  </View>
+                  
+                  <View style={styles.addressRow}>
+                    <View style={styles.addressDot}>
+                      <MapPin size={14} color="#50C878" style={styles.addressIcon} />
+                    </View>
+                    <Text style={styles.addressText} numberOfLines={1}>
+                      {typeof order.deliveryAddress === 'object' 
+                        ? order.deliveryAddress?.address || 'No delivery address'
+                        : order.deliveryAddress || 'No delivery address'}
+                    </Text>
+                  </View>
+                </View>
+                
+                <View style={styles.orderFooter}>
+                  <View style={styles.orderDate}>
+                    <Clock size={14} color={theme.colors.text.secondary} />
+                    <Text style={styles.orderDateText}>
+                      {(() => {
+                        try {
+                          return order.createdAt && typeof order.createdAt.toDate === 'function'
+                            ? new Date(order.createdAt.toDate()).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })
+                            : 'No date available';
+                        } catch (error) {
+                          console.error('Error formatting date:', error);
+                          return 'No date available';
+                        }
+                      })()}
+                    </Text>
+                  </View>
+                  
+                  <View style={styles.orderPrice}>
+                    <TruckIcon size={14} color={theme.colors.text.secondary} />
+                    <Text style={styles.orderPriceText}>
+                      ${order.totalAmount?.toFixed(2) || order.price?.toFixed(2) || '0.00'}
+                    </Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
             ))}
-          </View>
+          </ScrollView>
         )}
       </View>
 
@@ -565,6 +768,79 @@ export default function HomeTabScreen({ navigation }) {
           </View>
         </View>
       </Modal>
+
+      {/* View All Favorites Modal */}
+      <Modal
+        visible={showAllFavoritesModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowAllFavoritesModal(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>All Favorite Drivers</Text>
+              <TouchableOpacity 
+                style={styles.closeButton}
+                onPress={() => setShowAllFavoritesModal(false)}
+              >
+                <X size={24} color={theme.colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.driversListContainer}>
+              {favoriteDrivers.length === 0 ? (
+                <View style={styles.noDriversFound}>
+                  <Text style={styles.noDriversText}>No favorite drivers</Text>
+                </View>
+              ) : (
+                favoriteDrivers.map((driver) => (
+                  <View 
+                    key={driver.id}
+                    style={styles.driverListItem}
+                  >
+                    <View style={styles.driverListImageContainer}>
+                      <Text style={styles.favoriteDriverInitial}>
+                        {driver.name ? (driver.name.split(' ').map(n => n.charAt(0)).join('').slice(0, 2).toUpperCase()) : 'D'}
+                      </Text>
+                    </View>
+                    <View style={styles.driverListInfo}>
+                      <Text style={styles.driverListName}>{driver.name}</Text>
+                      <Text style={styles.driverListEmail}>{driver.email || 'No email available'}</Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => removeDriverFromFavorites(driver.id, driver.name)}
+                      style={styles.heartIconButton}
+                      disabled={addingFavoriteId === driver.id}
+                    >
+                      {addingFavoriteId === driver.id ? (
+                        <ActivityIndicator size="small" color={theme.colors.primary} />
+                      ) : (
+                        <Heart size={24} color={theme.colors.primary} fill={theme.colors.primary} />
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                ))
+              )}
+              
+              <TouchableOpacity 
+                style={styles.addDriverButton}
+                onPress={() => {
+                  setShowAllFavoritesModal(false);
+                  setTimeout(() => {
+                    openAddDriverModal();
+                  }, 300);
+                }}
+              >
+                <View style={styles.addDriverButtonContent}>
+                  <PlusIcon size={20} color="#FFFFFF" />
+                  <Text style={styles.addDriverButtonText}>Add New Driver</Text>
+                </View>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -575,7 +851,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.background,
   },
   contentContainer: {
-    paddingBottom: theme.spacing.xxl,
+    paddingBottom: 120,
   },
   header: {
     paddingHorizontal: theme.spacing.lg,
@@ -686,28 +962,28 @@ const styles = StyleSheet.create({
   },
   quickActions: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'space-around',
     paddingHorizontal: theme.spacing.lg,
     marginBottom: theme.spacing.xl,
   },
   quickAction: {
     alignItems: 'center',
-    width: '30%',
   },
   quickActionIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: theme.spacing.xs,
+    marginBottom: theme.spacing.sm,
     ...theme.shadows.sm,
   },
   quickActionText: {
     fontSize: 14,
     color: theme.colors.text.primary,
-    textAlign: 'center',
+    marginTop: theme.spacing.xs,
     fontFamily: theme.typography.fontFamily.medium,
+    textAlign: 'center',
   },
   section: {
     marginBottom: theme.spacing.xl,
@@ -721,7 +997,6 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
     color: theme.colors.text.primary,
     fontFamily: theme.typography.fontFamily.semibold,
   },
@@ -730,21 +1005,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   viewAllText: {
+    fontSize: 14,
     color: theme.colors.primary,
-    fontWeight: '500',
     fontFamily: theme.typography.fontFamily.medium,
+    marginRight: 4,
   },
   loadingContainer: {
-    backgroundColor: theme.colors.card,
-    padding: theme.spacing.lg,
-    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.xl,
     alignItems: 'center',
-    ...theme.shadows.sm,
+    justifyContent: 'center',
   },
   loadingText: {
-    textAlign: 'center',
     color: theme.colors.text.secondary,
-    fontFamily: theme.typography.fontFamily.regular,
+    marginTop: theme.spacing.md,
+    fontFamily: theme.typography.fontFamily.medium,
   },
   errorContainer: {
     alignItems: 'center',
@@ -761,38 +1035,37 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.xl,
   },
   emptyStateContainer: {
+    padding: theme.spacing.xl * 2,
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: theme.colors.card,
     borderRadius: theme.borderRadius.md,
-    padding: theme.spacing.xl,
-    marginTop: theme.spacing.xs,
     ...theme.shadows.sm,
   },
   emptyIconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 70,
+    height: 70,
+    borderRadius: 35,
     backgroundColor: theme.colors.backgroundAlt,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: theme.spacing.md,
+    marginBottom: theme.spacing.lg,
   },
   emptyStateText: {
     fontSize: 18,
-    fontWeight: '600',
     color: theme.colors.text.primary,
-    marginBottom: theme.spacing.xs,
     fontFamily: theme.typography.fontFamily.semibold,
+    marginBottom: theme.spacing.sm,
   },
   emptyStateSubtext: {
     fontSize: 14,
     color: theme.colors.text.secondary,
     textAlign: 'center',
-    marginBottom: theme.spacing.md,
     fontFamily: theme.typography.fontFamily.regular,
+    marginBottom: theme.spacing.lg,
   },
   ordersContainer: {
-    marginHorizontal: theme.spacing.lg,
+    marginTop: theme.spacing.sm,
   },
   mapCard: {
     marginHorizontal: theme.spacing.lg,
@@ -886,6 +1159,8 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     backgroundColor: theme.colors.backgroundAlt,
     overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   driverListImage: {
     width: '100%',
@@ -921,7 +1196,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.lg,
   },
   contactsList: {
-    marginVertical: theme.spacing.sm,
+    marginTop: theme.spacing.md,
+    paddingBottom: theme.spacing.sm,
   },
   loadingContactItem: {
     alignItems: 'center',
@@ -943,46 +1219,38 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: theme.colors.card,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.03)',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.06,
-        shadowRadius: 3,
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
+    borderColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
   contactInitial: {
     fontSize: 20,
     fontWeight: '500',
     color: theme.colors.text.primary,
     fontFamily: theme.typography.fontFamily.medium,
+    textAlign: 'center',
+    lineHeight: 24,
   },
   contactName: {
     fontSize: 14,
     color: theme.colors.text.primary,
     fontFamily: theme.typography.fontFamily.medium,
+    textAlign: 'center',
   },
   addNewContact: {
     alignItems: 'center',
     marginRight: theme.spacing.lg,
   },
-  addContactCircle: {
+  addContactPlus: {
     width: 60,
     height: 60,
     borderRadius: 30,
-    borderWidth: 2,
-    borderColor: theme.colors.border,
-    borderStyle: 'dashed',
+    backgroundColor: theme.colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: theme.spacing.xs,
-    backgroundColor: 'rgba(255,255,255,0.5)',
+    ...theme.shadows.sm,
   },
   favoriteIconContainer: {
     position: 'absolute',
@@ -1014,5 +1282,266 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 20,
     width: '100%',
+  },
+  orderCard: {
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
+    ...theme.shadows.sm,
+  },
+  orderCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: theme.spacing.md,
+  },
+  orderIconContainer: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: theme.colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: theme.spacing.sm,
+  },
+  orderCardTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.text.primary,
+    fontFamily: theme.typography.fontFamily.semibold,
+  },
+  orderStatusBadge: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.xs,
+    borderRadius: theme.borderRadius.full,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 3,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  orderStatusText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#FFFFFF',
+    fontFamily: theme.typography.fontFamily.medium,
+  },
+  orderAddresses: {
+    marginBottom: theme.spacing.md,
+    borderLeftWidth: 1,
+    borderLeftColor: theme.colors.border,
+    paddingLeft: theme.spacing.md,
+    marginLeft: 14,
+  },
+  addressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: theme.spacing.md,
+    position: 'relative',
+  },
+  addressDot: {
+    position: 'absolute',
+    left: -18,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: theme.colors.backgroundAlt,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addressIcon: {
+    width: 14,
+    height: 14,
+  },
+  addressText: {
+    flex: 1,
+    fontSize: 14,
+    color: theme.colors.text.primary,
+    fontFamily: theme.typography.fontFamily.regular,
+  },
+  orderFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+    paddingTop: theme.spacing.md,
+    marginTop: theme.spacing.xs,
+  },
+  orderDate: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  orderDateText: {
+    fontSize: 12,
+    color: theme.colors.text.secondary,
+    fontFamily: theme.typography.fontFamily.regular,
+    marginLeft: theme.spacing.xs,
+  },
+  orderPrice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  orderPriceText: {
+    fontSize: 12,
+    color: theme.colors.text.secondary,
+    fontFamily: theme.typography.fontFamily.regular,
+    marginLeft: theme.spacing.xs,
+  },
+  orderCardOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  headerGradient: {
+    marginHorizontal: theme.spacing.lg,
+    marginTop: Platform.OS === 'ios' ? 50 : 25,
+    marginBottom: theme.spacing.xl,
+  },
+  gradientHeader: {
+    borderRadius: theme.borderRadius.lg,
+    overflow: 'hidden',
+    paddingVertical: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.xl,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+  },
+  headerAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: 20,
+  },
+  headerActionText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontFamily: theme.typography.fontFamily.medium,
+    marginLeft: theme.spacing.xs,
+  },
+  recentDriverAvatar: {
+    backgroundColor: theme.colors.backgroundAlt,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  favoriteDriverInitial: {
+    fontSize: 20,
+    fontWeight: '500',
+    color: theme.colors.text.primary,
+    fontFamily: theme.typography.fontFamily.medium,
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  addDriverButton: {
+    margin: 16,
+    marginTop: 24,
+    padding: 16,
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...theme.shadows.sm,
+  },
+  addDriverButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addDriverButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontFamily: theme.typography.fontFamily.semibold,
+    marginLeft: 8,
+  },
+  heartIconButton: {
+    padding: 4,
+  },
+  horizontalOrdersContainer: {
+    paddingHorizontal: theme.spacing.sm,
+    paddingBottom: theme.spacing.lg,
+  },
+  horizontalOrderCard: {
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.lg,
+    marginRight: theme.spacing.lg,
+    width: width * 0.85,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
+  },
+  statusProgressContainer: {
+    marginVertical: theme.spacing.md,
+  },
+  statusProgressTrack: {
+    height: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginBottom: theme.spacing.sm,
+  },
+  statusProgressFill: {
+    height: '100%',
+    backgroundColor: theme.colors.primary,
+    borderRadius: 3,
+  },
+  statusStepsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  statusStep: {
+    alignItems: 'center',
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  statusStepText: {
+    fontSize: 10,
+    fontFamily: theme.typography.fontFamily.regular,
+    color: theme.colors.text.tertiary,
+    textAlign: 'center',
+  },
+  activeStatusText: {
+    fontWeight: 'bold',
+    color: theme.colors.primary,
+  },
+  sectionTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  sectionTitleAccent: {
+    width: 4,
+    height: 20,
+    backgroundColor: theme.colors.primary,
+    marginLeft: theme.spacing.sm,
   },
 }); 

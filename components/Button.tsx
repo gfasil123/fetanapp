@@ -40,11 +40,11 @@ export default function Button({
   rounded = false,
 }: ButtonProps) {
   const getBackgroundColor = () => {
-    if (disabled) return '#a0a0a0';
+    if (disabled) return '#333333'; // Slightly lighter than background for visibility
     
     switch (variant) {
       case 'primary':
-        return theme.colors.primary;
+        return undefined; // Will use gradient instead
       case 'secondary':
         return theme.colors.secondary;
       case 'outline':
@@ -54,25 +54,29 @@ export default function Button({
       case 'gradient':
         return 'transparent'; // Gradient handled separately
       default:
-        return theme.colors.primary;
+        return undefined; // Will use gradient instead
     }
   };
 
   const getTextColor = () => {
-    if (disabled) return '#ffffff';
+    if (disabled) return '#AAAAAA';
     
     switch (variant) {
       case 'outline':
         return theme.colors.primary;
       case 'secondary':
-        return theme.colors.text.contrast;
+        return theme.colors.text.primary;
+      case 'primary':
+        return '#FFFFFF';
+      case 'danger':
+        return '#FFFFFF';
       default:
-        return theme.colors.text.contrast;
+        return theme.colors.text.primary;
     }
   };
 
   const getBorderColor = () => {
-    if (disabled) return '#a0a0a0';
+    if (disabled) return '#555555';
     
     switch (variant) {
       case 'outline':
@@ -111,8 +115,8 @@ export default function Button({
     return theme.borderRadius.md;
   };
 
-  // Gradient button
-  if (variant === 'gradient' && !disabled) {
+  // Handle both gradient and primary buttons with gradients
+  if ((variant === 'gradient' || variant === 'primary') && !disabled) {
     return (
       <TouchableOpacity
         onPress={onPress}
@@ -127,7 +131,9 @@ export default function Button({
         ]}
       >
         <LinearGradient
-          colors={[theme.colors.gradient.primary[0], theme.colors.gradient.primary[1]]}
+          colors={variant === 'primary' ? 
+            ['#7B51D2', '#9D76E8'] : // Primary gradient (reversed for better contrast)
+            [theme.colors.gradient.purple[0], theme.colors.gradient.purple[1]]} // Original gradient
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
           style={[
@@ -136,11 +142,13 @@ export default function Button({
               borderRadius: getBorderRadius(),
               ...getPadding(),
               width: '100%',
+              borderWidth: 1,
+              borderColor: 'rgba(255,255,255,0.1)', // Add subtle light border for visibility
             },
           ]}
         >
           {loading ? (
-            <ActivityIndicator color={theme.colors.text.contrast} size="small" />
+            <ActivityIndicator color="#FFFFFF" size="small" />
           ) : (
             <>
               {icon && icon}
@@ -148,7 +156,7 @@ export default function Button({
                 style={[
                   styles.buttonText,
                   {
-                    color: theme.colors.text.contrast,
+                    color: '#FFFFFF', // Ensure white text on gradients
                     fontSize: getFontSize(),
                     marginLeft: icon ? 8 : 0,
                     fontFamily: theme.typography.fontFamily.semibold,
@@ -165,7 +173,7 @@ export default function Button({
     );
   }
 
-  // Regular button
+  // Regular button (secondary, outline, danger)
   return (
     <TouchableOpacity
       style={[
@@ -214,7 +222,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    ...theme.shadows.sm,
+    shadowColor: theme.colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
   },
   buttonText: {
     fontWeight: '600',

@@ -6,15 +6,16 @@ import { Truck } from 'lucide-react-native';
 // Define theme locally to avoid circular dependencies
 const localTheme = {
   colors: {
-    backgroundAlt: '#E9EEF6',
-    background: '#FFFFFF',
+    backgroundAlt: '#121212', // Dark background
+    background: '#1E1E1E', // Slightly lighter background
     text: {
-      primary: '#333F51',
-      secondary: '#7C8DB5',
-      contrast: '#FFFFFF',
+      primary: '#FFFFFF', // White for primary text
+      secondary: '#CCCCCC', // Light gray for secondary text
+      contrast: '#000000', // Black for contrast on light backgrounds
     },
+    primary: '#9D76E8', // Purple accent color
     navbar: {
-      background: '#333F51',
+      background: '#121212', // Dark navbar
     },
   },
   spacing: {
@@ -35,7 +36,7 @@ const localTheme = {
     lg: {
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.12,
+      shadowOpacity: 0.5,
       shadowRadius: 8,
       elevation: 8,
     },
@@ -126,7 +127,7 @@ export default function SplashScreen({ onAnimationComplete }: SplashScreenProps)
         >
           {lottieError ? (
             // Fallback to icon if Lottie fails
-            <Truck size={width * 0.15} color={localTheme.colors.navbar.background} />
+            <Truck size={width * 0.15} color={localTheme.colors.primary} />
           ) : (
             <LottieView
               ref={lottieRef}

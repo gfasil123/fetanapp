@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, ScrollView, Alert, Platform } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { useOrders } from '../../hooks/useOrders';
 import OrderItem from '../../components/OrderItem';
@@ -65,7 +65,7 @@ export default function OrdersTabScreen({ navigation }) {
           style={styles.filterButton}
           onPress={() => setShowFilters(!showFilters)}
         >
-          <Filter size={20} color="#3366FF" />
+          <Filter size={20} color={theme.colors.primary} />
         </TouchableOpacity>
       </View>
 
@@ -162,12 +162,12 @@ export default function OrdersTabScreen({ navigation }) {
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#3366FF" />
+          <ActivityIndicator size="large" color={theme.colors.primary} />
           <Text style={styles.loadingText}>Loading orders...</Text>
         </View>
       ) : error ? (
         <View style={styles.errorContainer}>
-          <AlertCircle size={64} color="#FF3B30" />
+          <AlertCircle size={64} color={theme.colors.danger} />
           <Text style={styles.errorTitle}>Error Loading Orders</Text>
           <Text style={styles.errorText}>
             {error}. This could be due to network issues or insufficient permissions.
@@ -175,6 +175,7 @@ export default function OrdersTabScreen({ navigation }) {
           <Button
             title="Retry"
             onPress={handleRetry}
+            variant="primary"
             style={{ marginTop: 20 }}
           />
           <Button
@@ -194,7 +195,7 @@ export default function OrdersTabScreen({ navigation }) {
         />
       ) : (
         <View style={styles.emptyContainer}>
-          <Package size={64} color="#CCCCCC" />
+          <Package size={64} color={theme.colors.text.secondary} />
           <Text style={styles.emptyText}>No orders found</Text>
           {statusFilter !== 'all' ? (
             <Text style={styles.emptySubtext}>
@@ -208,6 +209,7 @@ export default function OrdersTabScreen({ navigation }) {
           <Button
             title="Create Order"
             onPress={handleCreateOrder}
+            variant="gradient"
             style={{ marginTop: 20 }}
           />
         </View>
@@ -219,50 +221,60 @@ export default function OrdersTabScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: theme.colors.background,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 60,
+    paddingTop: Platform.OS === 'ios' ? 60 : 30,
     paddingBottom: 16,
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.colors.background,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
   },
   title: {
     fontSize: 24,
-    fontWeight: '700',
-    color: '#333',
+    fontFamily: theme.typography.fontFamily.bold,
+    color: theme.colors.text.primary,
   },
   filterButton: {
     padding: 8,
+    backgroundColor: theme.colors.card,
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   filtersContainer: {
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#ffffff',
-    marginBottom: 8,
+    backgroundColor: theme.colors.background,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
   },
   filterChip: {
     paddingHorizontal: 16,
     paddingVertical: 8,
-    backgroundColor: '#f0f3f8',
+    backgroundColor: theme.colors.card,
     borderRadius: 20,
     marginRight: 8,
   },
   activeFilterChip: {
-    backgroundColor: '#3366FF',
+    backgroundColor: theme.colors.primary,
   },
   filterChipText: {
-    color: '#333',
-    fontWeight: '500',
+    color: theme.colors.text.primary,
+    fontFamily: theme.typography.fontFamily.medium,
   },
   activeFilterChipText: {
     color: '#FFFFFF',
   },
   listContent: {
     padding: 16,
+    paddingBottom: 120, // Extra padding at the bottom for better scroll experience
   },
   loadingContainer: {
     flex: 1,
@@ -272,42 +284,49 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#333',
+    color: theme.colors.text.secondary,
+    fontFamily: theme.typography.fontFamily.medium,
   },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+    backgroundColor: theme.colors.background,
   },
   emptyText: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
+    fontFamily: theme.typography.fontFamily.semibold,
+    color: theme.colors.text.primary,
     marginTop: 16,
   },
   emptySubtext: {
     fontSize: 14,
-    color: '#666',
+    color: theme.colors.text.secondary,
+    fontFamily: theme.typography.fontFamily.regular,
     textAlign: 'center',
     marginTop: 8,
+    marginBottom: 16,
   },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+    backgroundColor: theme.colors.background,
   },
   errorTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
+    fontFamily: theme.typography.fontFamily.semibold,
+    color: theme.colors.text.primary,
     marginTop: 16,
   },
   errorText: {
     fontSize: 14,
-    color: '#666',
+    color: theme.colors.text.secondary,
+    fontFamily: theme.typography.fontFamily.regular,
     textAlign: 'center',
     marginTop: 8,
+    marginBottom: 16,
   }
 }); 

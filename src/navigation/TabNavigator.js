@@ -10,9 +10,11 @@ import {
 
 // Import screens
 import HomeTabScreen from '../screens/HomeTabScreen';
+import DriverHomeScreen from '../screens/DriverHomeScreen';
 import OrdersTabScreen from '../screens/OrdersTabScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import { useAuth } from '../context/AuthContext';
 
 const Tab = createBottomTabNavigator();
 
@@ -53,6 +55,9 @@ const theme = {
 };
 
 export default function TabNavigator() {
+  const { user } = useAuth();
+  const isDriver = user?.role === 'driver';
+  
   const getIconStyle = (focused) => ({
     padding: theme.spacing.xxs,
     borderRadius: theme.borderRadius.full,
@@ -89,7 +94,7 @@ export default function TabNavigator() {
     >
       <Tab.Screen
         name="Home"
-        component={HomeTabScreen}
+        component={isDriver ? DriverHomeScreen : HomeTabScreen}
         options={{
           tabBarIcon: ({ color, focused }) => (
             <View style={getIconStyle(focused)}>

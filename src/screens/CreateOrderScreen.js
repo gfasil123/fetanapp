@@ -1,7 +1,7 @@
 // Import the polyfill for crypto.getRandomValues()
 import 'react-native-get-random-values';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -46,184 +46,10 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../../firebase/config';
 import * as Location from 'expo-location';
 import ENV from '../../config/environment';
+import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 
 // Get Google Places API key from environment configuration
 const GOOGLE_PLACES_API_KEY = ENV.GOOGLE_PLACES_API_KEY;
-
-// Custom Address Autocomplete Component
-const AddressAutocomplete = ({ 
-  placeholder, 
-  value, 
-  onChangeText, 
-  onSelectAddress 
-}) => {
-  const [predictions, setPredictions] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [showPredictions, setShowPredictions] = useState(false);
-  const timeoutRef = useRef(null);
-
-  // When the value changes, fetch predictions after a delay
-  useEffect(() => {
-    // Clear any existing timeout
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    
-    // Only fetch if the text is at least 3 characters
-    if (value && value.length >= 3) {
-      timeoutRef.current = setTimeout(() => {
-        fetchPredictions(value);
-      }, 500);
-    } else {
-      setPredictions([]);
-      setShowPredictions(false);
-    }
-    
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    };
-  }, [value]);
-
-  // Hide predictions when keyboard is dismissed
-  useEffect(() => {
-    const keyboardDidHideListener = Keyboard.addListener(
-      'keyboardDidHide',
-      () => {
-        setShowPredictions(false);
-      }
-    );
-
-    return () => {
-      keyboardDidHideListener.remove();
-    };
-  }, []);
-
-  const fetchPredictions = async (text) => {
-    if (!text) return;
-    
-    setIsLoading(true);
-    
-    try {
-      // Don't log user address input data
-      console.log('Fetching address predictions');
-      
-      const response = await fetch(
-        `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(
-          text
-        )}&key=${GOOGLE_PLACES_API_KEY}&components=country:us`
-      );
-      
-      const data = await response.json();
-      
-      if (data.status === 'OK' && data.predictions) {
-        setPredictions(data.predictions);
-        setShowPredictions(true);
-      } else {
-        // Don't log API status which might expose sensitive information
-        console.log('Google Places API prediction failed');
-        setPredictions([]);
-        setShowPredictions(false);
-      }
-    } catch (error) {
-      console.error('Error fetching address predictions:', error);
-      setPredictions([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSelectPlace = async (placeId, description) => {
-    onChangeText(description);
-    setShowPredictions(false);
-    
-    // Get place details
-    try {
-      const response = await fetch(
-        `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=geometry,formatted_address&key=${GOOGLE_PLACES_API_KEY}`
-      );
-      
-      const data = await response.json();
-      
-      if (data.status === 'OK' && data.result) {
-        const location = data.result.geometry.location;
-        const address = data.result.formatted_address || description;
-        
-        // Call the callback with address details
-        onSelectAddress({
-          address,
-          location: {
-            latitude: location.lat,
-            longitude: location.lng
-          }
-        });
-      } else {
-        // Fallback to just using the description
-        onSelectAddress({
-          address: description,
-          location: null
-        });
-      }
-    } catch (error) {
-      console.error('Error getting place details:', error);
-      // Fallback to just using the description
-      onSelectAddress({
-        address: description,
-        location: null
-      });
-    }
-  };
-
-  return (
-    <View style={styles.autocompleteContainer}>
-      <View style={styles.addressInputContainer}>
-        <MapPin 
-          size={16} 
-          color={theme.colors.text.secondary}
-          style={styles.addressIcon}
-        />
-        <TextInput
-          style={styles.addressInput}
-          value={value}
-          onChangeText={onChangeText}
-          placeholder={placeholder}
-          placeholderTextColor="#888"
-          onFocus={() => value && value.length >= 3 && setShowPredictions(true)}
-        />
-        {isLoading && (
-          <ActivityIndicator 
-            size="small" 
-            color={theme.colors.text.secondary} 
-          />
-        )}
-      </View>
-      
-      {showPredictions && predictions.length > 0 && (
-        <View style={styles.predictionsContainer}>
-          <FlatList
-            data={predictions}
-            keyExtractor={(item) => item.place_id}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.predictionItem}
-                onPress={() => handleSelectPlace(item.place_id, item.description)}
-              >
-                <MapPin 
-                  size={16} 
-                  color={theme.colors.text.secondary}
-                  style={styles.predictionIcon}
-                />
-                <Text style={styles.predictionText} numberOfLines={1}>
-                  {item.description}
-                </Text>
-              </TouchableOpacity>
-            )}
-            style={styles.predictionsList}
-            keyboardShouldPersistTaps="always"
-            nestedScrollEnabled={true}
-          />
-        </View>
-      )}
-    </View>
-  );
-};
 
 const { width } = Dimensions.get('window');
 
@@ -239,6 +65,7 @@ export default function CreateOrderScreen({ navigation }) {
   const [deliveryType, setDeliveryType] = useState('standard');
   const [packageType, setPackageType] = useState('others');
   const [weight, setWeight] = useState('');
+  const [packageDescription, setPackageDescription] = useState('');
   const [packageImage, setPackageImage] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   
@@ -248,8 +75,11 @@ export default function CreateOrderScreen({ navigation }) {
   const [pickupLocation, setPickupLocation] = useState(null);
   const [deliveryLocation, setDeliveryLocation] = useState(null);
   
+  // Refs for the GooglePlacesAutocomplete components
+  const pickupAddressRef = useRef(null);
+  const deliveryAddressRef = useRef(null);
+  
   // Favorite drivers functionality
-  const [useFavoriteDriver, setUseFavoriteDriver] = useState(false);
   const [favoriteDriver, setFavoriteDriver] = useState('');
   const [favoriteDriverId, setFavoriteDriverId] = useState('');
   const [showDriversModal, setShowDriversModal] = useState(false);
@@ -262,6 +92,42 @@ export default function CreateOrderScreen({ navigation }) {
   const [distance, setDistance] = useState(0);
   const [cost, setCost] = useState(10);
   const [isLoading, setIsLoading] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [countdown, setCountdown] = useState(3);
+
+  // Initialize global state once
+  useEffect(() => {
+    if (typeof global._activePredictions === 'undefined') {
+      global._activePredictions = {};
+    }
+    
+    return () => {
+      // Clean up when component unmounts
+      global._activePredictions = {};
+    };
+  }, []);
+  
+  // Use a single forceRender function with useCallback to prevent recreation
+  const [renderKey, setRenderKey] = useState(0);
+  const forceRender = useCallback(() => {
+    setRenderKey(prev => prev + 1);
+  }, []);
+  
+  // Create a more efficient rendering mechanism
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (global._activePredictions) {
+        const hasVisiblePredictions = Object.values(global._activePredictions).some(
+          pred => pred && pred.visible
+        );
+        if (hasVisiblePredictions) {
+          forceRender();
+        }
+      }
+    }, 200); // Lower frequency to 200ms
+    
+    return () => clearInterval(interval);
+  }, [forceRender]);
 
   // Pre-fill pickup address with current location
   useEffect(() => {
@@ -283,6 +149,11 @@ export default function CreateOrderScreen({ navigation }) {
             if (data.status === 'OK' && data.results && data.results.length > 0) {
               const address = data.results[0].formatted_address;
               setPickupAddress(address);
+              
+              // Set text in the Google Places Autocomplete input
+              if (pickupAddressRef.current) {
+                pickupAddressRef.current.setAddressText(address);
+              }
             } else {
               // Fallback to Expo Location if Google API fails
               const response = await Location.reverseGeocodeAsync({ latitude, longitude });
@@ -291,6 +162,11 @@ export default function CreateOrderScreen({ navigation }) {
                 const address = response[0];
                 const formattedAddress = `${address.street || ''}, ${address.city || ''}, ${address.region || ''}`;
                 setPickupAddress(formattedAddress);
+                
+                // Set text in the Google Places Autocomplete input
+                if (pickupAddressRef.current) {
+                  pickupAddressRef.current.setAddressText(formattedAddress);
+                }
               }
             }
           } catch (error) {
@@ -302,6 +178,11 @@ export default function CreateOrderScreen({ navigation }) {
               const address = response[0];
               const formattedAddress = `${address.street || ''}, ${address.city || ''}, ${address.region || ''}`;
               setPickupAddress(formattedAddress);
+              
+              // Set text in the Google Places Autocomplete input
+              if (pickupAddressRef.current) {
+                pickupAddressRef.current.setAddressText(formattedAddress);
+              }
             }
           }
         }
@@ -324,6 +205,18 @@ export default function CreateOrderScreen({ navigation }) {
       fetchFavoriteDrivers();
     }
   }, [user]);
+
+  // Clean up any active intervals when component unmounts
+  useEffect(() => {
+    return () => {
+      // Clear any active intervals when component unmounts
+      const intervalIds = [];
+      const highestId = setInterval(() => {}, 0);
+      for (let i = 0; i < highestId; i++) {
+        clearInterval(i);
+      }
+    };
+  }, []);
 
   // Calculate distance and cost when locations change
   useEffect(() => {
@@ -553,6 +446,10 @@ export default function CreateOrderScreen({ navigation }) {
         Alert.alert('Missing Information', 'Please provide package weight');
         return;
       }
+      if (!packageDescription) {
+        Alert.alert('Missing Information', 'Please provide a package description');
+        return;
+      }
       if (!packageImage) {
         Alert.alert('Missing Information', 'Please upload an image of the package');
         return;
@@ -598,6 +495,7 @@ export default function CreateOrderScreen({ navigation }) {
         packageDetails: {
           type: packageType,
           weight: packageType === 'paper' ? 'N/A' : (weight || 'Not specified'),
+          description: packageType === 'paper' ? 'Paper document' : packageDescription || 'No description provided',
           imageUrl: imageUrl,
         },
         
@@ -613,9 +511,9 @@ export default function CreateOrderScreen({ navigation }) {
           longitude: deliveryLocation.longitude
         },
         
-        // Driver assignment
-        favoriteDriverId: favoriteDriverId || null,
-        favoriteDriverName: favoriteDriver || null,
+        // Driver assignment (directly use favoriteDriverId if present)
+        driverId: favoriteDriverId || null,
+        driverName: favoriteDriver || null,
         
         // Order status and metrics
         distance,
@@ -627,9 +525,25 @@ export default function CreateOrderScreen({ navigation }) {
       // Add to Firestore
       const docRef = await addDoc(collection(db, 'orders'), orderData);
 
-      Alert.alert('Success', 'Your order has been placed!', [
-        { text: 'OK', onPress: () => navigation.navigate('Main', { screen: 'Orders' }) }
-      ]);
+      // Show success modal
+      setShowSuccessModal(true);
+      setCountdown(3);
+      
+      // Set up countdown timer
+      const countdownInterval = setInterval(() => {
+        setCountdown(prevCount => {
+          if (prevCount <= 1) {
+            clearInterval(countdownInterval);
+            // Navigate after countdown reaches 0
+            setTimeout(() => {
+              setShowSuccessModal(false);
+              navigation.navigate('Main', { screen: 'Orders' });
+            }, 500);
+            return 0;
+          }
+          return prevCount - 1;
+        });
+      }, 1000);
     } catch (error) {
       console.error('Error placing order:', error);
       Alert.alert('Error', 'Failed to place your order. Please try again.');
@@ -640,277 +554,449 @@ export default function CreateOrderScreen({ navigation }) {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.backButton} 
-          onPress={() => navigation.goBack()}
+    <>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity 
+            style={styles.backButton} 
+            onPress={() => navigation.goBack()}
+          >
+            <ArrowLeft size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Create Order</Text>
+          <View style={{ width: 40 }} />
+        </View>
+
+        <ScrollView 
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollViewContent}
+          nestedScrollEnabled={true}
+          keyboardShouldPersistTaps="handled"
         >
-          <ArrowLeft size={24} color="#FFFFFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Create Order</Text>
-        <View style={{ width: 40 }} />
-      </View>
+          {/* Delivery Type Selection */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Delivery Type</Text>
+            <View style={styles.deliveryTypeContainer}>
+              {deliveryTypes.map((type) => (
+                <TouchableOpacity 
+                  key={type.id}
+                  style={[
+                    styles.deliveryTypeOption,
+                    deliveryType === type.id && styles.deliveryTypeSelected
+                  ]}
+                  onPress={() => setDeliveryType(type.id)}
+                >
+                  <LinearGradient
+                    colors={deliveryType === type.id 
+                      ? ['#7B51D2', '#9D76E8'] 
+                      : ['#252525', '#1E1E1E']}
+                    style={styles.deliveryTypeGradient}
+                  >
+                    <View style={styles.deliveryTypeIcon}>
+                      {type.id === 'standard' ? (
+                        <Truck 
+                          size={24} 
+                          color={deliveryType === type.id ? '#FFFFFF' : '#CCCCCC'} 
+                        />
+                      ) : (
+                        <Navigation 
+                          size={24} 
+                          color={deliveryType === type.id ? '#FFFFFF' : '#CCCCCC'} 
+                        />
+                      )}
+                    </View>
+                    <Text 
+                      style={[
+                        styles.deliveryTypeName,
+                        deliveryType === type.id && styles.deliveryTypeTextSelected
+                      ]}
+                    >
+                      {type.name}
+                    </Text>
+                    <Text 
+                      style={[
+                        styles.deliveryTypeDescription,
+                        deliveryType === type.id && styles.deliveryTypeTextSelected
+                      ]}
+                    >
+                      {type.description}
+                    </Text>
+                    <Text 
+                      style={[
+                        styles.deliveryTypePrice,
+                        deliveryType === type.id && styles.deliveryTypeTextSelected
+                      ]}
+                    >
+                      ${type.price}
+                    </Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
 
-      <ScrollView 
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollViewContent}
-        nestedScrollEnabled={true}
-      >
-        {/* Delivery Type Selection */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Delivery Type</Text>
-          <View style={styles.deliveryTypeContainer}>
-            {deliveryTypes.map((type) => (
+          {/* Package Type Selection */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Package Type</Text>
+            <View style={styles.packageTypeContainer}>
               <TouchableOpacity 
-                key={type.id}
                 style={[
-                  styles.deliveryTypeOption,
-                  deliveryType === type.id && styles.deliveryTypeSelected
+                  styles.packageTypeOption,
+                  packageType === 'paper' && styles.packageTypeSelected
                 ]}
-                onPress={() => setDeliveryType(type.id)}
+                onPress={() => setPackageType('paper')}
               >
                 <LinearGradient
-                  colors={deliveryType === type.id 
-                    ? ['#333333', '#222222'] 
-                    : ['#F8F8F8', '#FFFFFF']}
-                  style={styles.deliveryTypeGradient}
+                  colors={packageType === 'paper' 
+                    ? ['#7B51D2', '#9D76E8'] 
+                    : ['#252525', '#1E1E1E']}
+                  style={styles.packageTypeGradient}
                 >
-                  <View style={styles.deliveryTypeIcon}>
-                    {type.id === 'standard' ? (
-                      <Truck 
-                        size={24} 
-                        color={deliveryType === type.id ? '#FFFFFF' : theme.colors.text.primary} 
-                      />
-                    ) : (
-                      <Navigation 
-                        size={24} 
-                        color={deliveryType === type.id ? '#FFFFFF' : theme.colors.text.primary} 
-                      />
-                    )}
-                  </View>
                   <Text 
                     style={[
-                      styles.deliveryTypeName,
-                      deliveryType === type.id && styles.deliveryTypeTextSelected
+                      styles.packageTypeName,
+                      packageType === 'paper' && styles.packageTypeTextSelected
                     ]}
                   >
-                    {type.name}
-                  </Text>
-                  <Text 
-                    style={[
-                      styles.deliveryTypeDescription,
-                      deliveryType === type.id && styles.deliveryTypeTextSelected
-                    ]}
-                  >
-                    {type.description}
-                  </Text>
-                  <Text 
-                    style={[
-                      styles.deliveryTypePrice,
-                      deliveryType === type.id && styles.deliveryTypeTextSelected
-                    ]}
-                  >
-                    ${type.price}
+                    Paper
                   </Text>
                 </LinearGradient>
               </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* Package Type Selection */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Package Type</Text>
-          <View style={styles.packageTypeContainer}>
-            <TouchableOpacity 
-              style={[
-                styles.packageTypeOption,
-                packageType === 'paper' && styles.packageTypeSelected
-              ]}
-              onPress={() => setPackageType('paper')}
-            >
-              <LinearGradient
-                colors={packageType === 'paper' 
-                  ? ['#333333', '#222222'] 
-                  : ['#F8F8F8', '#FFFFFF']}
-                style={styles.packageTypeGradient}
+              
+              <TouchableOpacity 
+                style={[
+                  styles.packageTypeOption,
+                  packageType === 'others' && styles.packageTypeSelected
+                ]}
+                onPress={() => setPackageType('others')}
               >
-                <Text 
-                  style={[
-                    styles.packageTypeName,
-                    packageType === 'paper' && styles.packageTypeTextSelected
-                  ]}
+                <LinearGradient
+                  colors={packageType === 'others' 
+                    ? ['#7B51D2', '#9D76E8'] 
+                    : ['#252525', '#1E1E1E']}
+                  style={styles.packageTypeGradient}
                 >
-                  Paper
-                </Text>
-              </LinearGradient>
-            </TouchableOpacity>
+                  <Text 
+                    style={[
+                      styles.packageTypeName,
+                      packageType === 'others' && styles.packageTypeTextSelected
+                    ]}
+                  >
+                    Others
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Package Information */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Package Information</Text>
             
-            <TouchableOpacity 
-              style={[
-                styles.packageTypeOption,
-                packageType === 'others' && styles.packageTypeSelected
-              ]}
-              onPress={() => setPackageType('others')}
-            >
-              <LinearGradient
-                colors={packageType === 'others' 
-                  ? ['#333333', '#222222'] 
-                  : ['#F8F8F8', '#FFFFFF']}
-                style={styles.packageTypeGradient}
-              >
-                <Text 
-                  style={[
-                    styles.packageTypeName,
-                    packageType === 'others' && styles.packageTypeTextSelected
-                  ]}
-                >
-                  Others
-                </Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Package Information */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Package Information</Text>
-          
-          {packageType === 'others' && (
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Weight (kg)</Text>
-              <TextInput
-                style={styles.input}
-                value={weight}
-                onChangeText={setWeight}
-                placeholder="Enter package weight"
-                keyboardType="decimal-pad"
-              />
-            </View>
-          )}
-          
-          {(packageType === 'others' && packageImage) ? (
-            <View style={styles.packageImageContainer}>
-              <Image 
-                source={{ uri: packageImage }} 
-                style={styles.packageImage} 
-              />
-              
-              {uploadProgress > 0 && uploadProgress < 100 && (
-                <View style={styles.progressOverlay}>
-                  <View style={[styles.progressBar, { width: `${uploadProgress}%` }]} />
-                  <Text style={styles.progressText}>{uploadProgress}%</Text>
+            {packageType === 'others' && (
+              <>
+                <View style={[styles.inputContainer, {marginBottom: 16}]}>
+                  <View style={styles.row}>
+                    <Text style={[styles.inputLabel, styles.inlineLabel]}>Weight (kg)</Text>
+                    <View style={styles.halfInputContainer}>
+                      <TextInput
+                        style={styles.compactInput}
+                        value={weight}
+                        onChangeText={setWeight}
+                        placeholder="Enter weight"
+                        placeholderTextColor="rgba(255, 255, 255, 0.5)"
+                        keyboardType="decimal-pad"
+                      />
+                    </View>
+                  </View>
                 </View>
-              )}
-              
-              <TouchableOpacity 
-                style={styles.removeImageButton}
-                onPress={() => setPackageImage(null)}
-              >
-                <X size={16} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
-          ) : packageType === 'others' ? (
-            <View style={styles.imageUploadButtons}>
-              <TouchableOpacity 
-                style={styles.uploadButton}
-                onPress={pickImage}
-              >
-                <LinearGradient
-                  colors={['#F8F8F8', '#FFFFFF']}
-                  style={styles.uploadGradient}
+                
+                <View style={styles.inputContainer}>
+                  <Text style={styles.inputLabel}>Description</Text>
+                  <TextInput
+                    style={styles.textAreaInput}
+                    value={packageDescription}
+                    onChangeText={setPackageDescription}
+                    placeholder="Describe your package (size, contents, etc.)"
+                    placeholderTextColor="rgba(255, 255, 255, 0.5)"
+                    multiline
+                    numberOfLines={3}
+                    textAlignVertical="top"
+                  />
+                </View>
+              </>
+            )}
+            
+            {(packageType === 'others' && packageImage) ? (
+              <View style={styles.packageImageContainer}>
+                <Image 
+                  source={{ uri: packageImage }} 
+                  style={styles.packageImage} 
+                />
+                
+                {uploadProgress > 0 && uploadProgress < 100 && (
+                  <View style={styles.progressOverlay}>
+                    <View style={[styles.progressBar, { width: `${uploadProgress}%` }]} />
+                    <Text style={styles.progressText}>{uploadProgress}%</Text>
+                  </View>
+                )}
+                
+                <TouchableOpacity 
+                  style={styles.removeImageButton}
+                  onPress={() => setPackageImage(null)}
                 >
-                  <Upload size={24} color={theme.colors.text.secondary} />
-                  <Text style={styles.uploadText}>Choose from Gallery</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={styles.uploadButton}
-                onPress={takePhoto}
-              >
-                <LinearGradient
-                  colors={['#F8F8F8', '#FFFFFF']}
-                  style={styles.uploadGradient}
+                  <X size={16} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+            ) : packageType === 'others' ? (
+              <View style={styles.imageUploadButtons}>
+                <TouchableOpacity 
+                  style={styles.uploadButton}
+                  onPress={pickImage}
                 >
-                  <PackageOpen size={24} color={theme.colors.text.secondary} />
-                  <Text style={styles.uploadText}>Take Photo</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
-          ) : null}
-        </View>
+                  <LinearGradient
+                    colors={['#252525', '#1E1E1E']}
+                    style={styles.uploadGradient}
+                  >
+                    <Upload size={24} color={theme.colors.text.secondary} />
+                    <Text style={styles.uploadText}>Choose from Gallery</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.uploadButton}
+                  onPress={takePhoto}
+                >
+                  <LinearGradient
+                    colors={['#252525', '#1E1E1E']}
+                    style={styles.uploadGradient}
+                  >
+                    <PackageOpen size={24} color={theme.colors.text.secondary} />
+                    <Text style={styles.uploadText}>Take Photo</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+          </View>
 
-        {/* Addresses */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Addresses</Text>
-          
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Pickup Address</Text>
-            <View style={styles.googlePlacesContainer}>
-              <AddressAutocomplete
-                placeholder="Enter pickup address"
-                value={pickupAddress}
-                onChangeText={setPickupAddress}
-                onSelectAddress={(addressDetails) => {
-                  setPickupAddress(addressDetails.address);
-                  setPickupLocation(addressDetails.location);
-                }}
-              />
+          {/* Addresses */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Addresses</Text>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Pickup Address</Text>
+              <View style={styles.googlePlacesContainer}>
+                <GooglePlacesAutocomplete
+                  ref={pickupAddressRef}
+                  placeholder="Enter pickup address"
+                  minLength={2}
+                  fetchDetails={true}
+                  onPress={(data, details = null) => {
+                    // 'details' is provided when fetchDetails = true
+                    setPickupAddress(data.description);
+                    if (details && details.geometry) {
+                      setPickupLocation({
+                        latitude: details.geometry.location.lat,
+                        longitude: details.geometry.location.lng
+                      });
+                    }
+                  }}
+                  query={{
+                    key: GOOGLE_PLACES_API_KEY,
+                    language: 'en',
+                  }}
+                  styles={{
+                    container: {
+                      flex: 0,
+                    },
+                    textInputContainer: {
+                      flexDirection: 'row',
+                      backgroundColor: 'rgba(255, 255, 255, 0.06)',
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: 'rgba(255, 255, 255, 0.1)',
+                      alignItems: 'center',
+                      height: 50,
+                    },
+                    textInput: {
+                      backgroundColor: 'transparent',
+                      height: 48,
+                      color: '#FFFFFF',
+                      fontSize: 16,
+                      flex: 1,
+                    },
+                    predefinedPlacesDescription: {
+                      color: '#3366FF',
+                    },
+                    listView: {
+                      backgroundColor: '#121212',
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: '#333333',
+                      marginTop: 5,
+                      elevation: 5,
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.25,
+                      shadowRadius: 3.84,
+                    },
+                    row: {
+                      backgroundColor: '#121212',
+                      padding: 13,
+                      height: 'auto',
+                      flexDirection: 'row',
+                    },
+                    separator: {
+                      height: 1,
+                      backgroundColor: '#333333',
+                    },
+                    description: {
+                      color: '#FFFFFF',
+                    },
+                    poweredContainer: {
+                      backgroundColor: '#121212',
+                      justifyContent: 'flex-end',
+                      alignItems: 'center',
+                      borderBottomRightRadius: 12,
+                      borderBottomLeftRadius: 12,
+                      borderColor: '#333333',
+                      borderTopWidth: 0.5,
+                    },
+                  }}
+                  enablePoweredByContainer={true}
+                  renderLeftButton={() => (
+                    <MapPin
+                      size={20}
+                      color={theme.colors.text.secondary}
+                      style={{ marginLeft: 16 }}
+                    />
+                  )}
+                  listViewDisplayed={false}
+                  debounce={300}
+                  textInputProps={{
+                    placeholderTextColor: 'rgba(255, 255, 255, 0.5)',
+                  }}
+                  keyboardShouldPersistTaps="handled"
+                />
+              </View>
+            </View>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Delivery Address</Text>
+              <View style={styles.googlePlacesContainer}>
+                <GooglePlacesAutocomplete
+                  ref={deliveryAddressRef}
+                  placeholder="Enter delivery address"
+                  minLength={2}
+                  fetchDetails={true}
+                  onPress={(data, details = null) => {
+                    // 'details' is provided when fetchDetails = true
+                    setDeliveryAddress(data.description);
+                    if (details && details.geometry) {
+                      setDeliveryLocation({
+                        latitude: details.geometry.location.lat,
+                        longitude: details.geometry.location.lng
+                      });
+                    }
+                  }}
+                  query={{
+                    key: GOOGLE_PLACES_API_KEY,
+                    language: 'en',
+                  }}
+                  styles={{
+                    container: {
+                      flex: 0,
+                    },
+                    textInputContainer: {
+                      flexDirection: 'row',
+                      backgroundColor: 'rgba(255, 255, 255, 0.06)',
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: 'rgba(255, 255, 255, 0.1)',
+                      alignItems: 'center',
+                      height: 50,
+                    },
+                    textInput: {
+                      backgroundColor: 'transparent',
+                      height: 48,
+                      color: '#FFFFFF',
+                      fontSize: 16,
+                      flex: 1,
+                    },
+                    predefinedPlacesDescription: {
+                      color: '#3366FF',
+                    },
+                    listView: {
+                      backgroundColor: '#121212',
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: '#333333',
+                      marginTop: 5,
+                      elevation: 5,
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.25,
+                      shadowRadius: 3.84,
+                    },
+                    row: {
+                      backgroundColor: '#121212',
+                      padding: 13,
+                      height: 'auto',
+                      flexDirection: 'row',
+                    },
+                    separator: {
+                      height: 1,
+                      backgroundColor: '#333333',
+                    },
+                    description: {
+                      color: '#FFFFFF',
+                    },
+                    poweredContainer: {
+                      backgroundColor: '#121212',
+                      justifyContent: 'flex-end',
+                      alignItems: 'center',
+                      borderBottomRightRadius: 12,
+                      borderBottomLeftRadius: 12,
+                      borderColor: '#333333',
+                      borderTopWidth: 0.5,
+                    },
+                  }}
+                  enablePoweredByContainer={true}
+                  renderLeftButton={() => (
+                    <MapPin
+                      size={20}
+                      color={theme.colors.text.secondary}
+                      style={{ marginLeft: 16 }}
+                    />
+                  )}
+                  listViewDisplayed={false}
+                  debounce={300}
+                  textInputProps={{
+                    placeholderTextColor: 'rgba(255, 255, 255, 0.5)',
+                  }}
+                  keyboardShouldPersistTaps="handled"
+                />
+              </View>
             </View>
           </View>
-          
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Delivery Address</Text>
-            <View style={styles.googlePlacesContainer}>
-              <AddressAutocomplete
-                placeholder="Enter delivery address"
-                value={deliveryAddress}
-                onChangeText={setDeliveryAddress}
-                onSelectAddress={(addressDetails) => {
-                  setDeliveryAddress(addressDetails.address);
-                  setDeliveryLocation(addressDetails.location);
-                }}
-              />
-            </View>
-          </View>
-        </View>
 
-        {/* Use Favourite Driver Section */}
-        <View style={styles.section}>
-          <View style={styles.favoriteDriverToggleContainer}>
-            <Text style={styles.sectionTitle}>Use Favourite Driver</Text>
-            <Switch
-              trackColor={{ false: "#e0e0e0", true: "#333333" }}
-              thumbColor={useFavoriteDriver ? "#FFFFFF" : "#f4f3f4"}
-              ios_backgroundColor="#e0e0e0"
-              onValueChange={() => {
-                setUseFavoriteDriver(prev => !prev);
-                // Clear selection if toggled off
-                if (useFavoriteDriver) {
-                  setFavoriteDriver('');
-                  setFavoriteDriverId('');
-                }
-              }}
-              value={useFavoriteDriver}
-            />
-          </View>
-          
-          {useFavoriteDriver && (
+          {/* Favourite Driver Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Favourite Driver</Text>
+            
             <TouchableOpacity 
               style={styles.favoriteDriverButton}
               onPress={() => setShowDriversModal(true)}
             >
               <LinearGradient
-                colors={['#F8F8F8', '#FFFFFF']}
+                colors={['#252525', '#1E1E1E']}
                 style={styles.favoriteDriverGradient}
               >
                 <View style={styles.favoriteDriverIconContainer}>
                   <Users size={24} color={theme.colors.text.primary} />
                 </View>
                 <Text style={styles.favoriteDriverText}>
-                  {favoriteDriver ? favoriteDriver : 'Select Favourite Driver'}
+                  {favoriteDriver ? favoriteDriver : 'Click to select favorite driver'}
                 </Text>
                 <Star 
                   size={20} 
@@ -920,104 +1006,204 @@ export default function CreateOrderScreen({ navigation }) {
                 />
               </LinearGradient>
             </TouchableOpacity>
-          )}
-          
-          {/* Favourite Drivers Selection Modal */}
+            
+            {/* Favourite Drivers Selection Modal */}
+            <Modal
+              visible={showDriversModal}
+              animationType="slide"
+              transparent={true}
+              onRequestClose={() => setShowDriversModal(false)}
+            >
+              <View style={styles.modalContainer}>
+                <View style={styles.modalContent}>
+                  <View style={styles.modalHeader}>
+                    <Text style={styles.modalTitle}>Favourite Drivers</Text>
+                    <TouchableOpacity 
+                      style={styles.closeButton}
+                      onPress={() => setShowDriversModal(false)}
+                    >
+                      <X size={24} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  </View>
+                  
+                  <ScrollView style={styles.driversListContainer}>
+                    {loadingDrivers ? (
+                      <View style={styles.loadingContainer}>
+                        <ActivityIndicator size="large" color="#9D76E8" />
+                        <Text style={styles.loadingText}>Loading your favourite drivers...</Text>
+                      </View>
+                    ) : favoriteDrivers.length > 0 ? (
+                      favoriteDrivers.map(driver => (
+                        <TouchableOpacity 
+                          key={driver.id}
+                          style={[
+                            styles.driverItem,
+                            favoriteDriverId === driver.id && styles.selectedDriverItem
+                          ]}
+                          onPress={() => {
+                            setFavoriteDriverId(driver.id);
+                            setFavoriteDriver(driver.name);
+                            setShowDriversModal(false);
+                          }}
+                        >
+                          <View style={styles.driverAvatar}>
+                            <Text style={styles.driverAvatarText}>
+                              {driver.name ? driver.name.charAt(0).toUpperCase() : 'D'}
+                            </Text>
+                          </View>
+                          <View style={styles.driverInfo}>
+                            <Text style={styles.driverName}>{driver.name}</Text>
+                            <View style={styles.driverStatusContainer}>
+                              <View 
+                                style={[
+                                  styles.statusIndicator, 
+                                  { backgroundColor: driver.status === 'Available' ? '#4CAF50' : '#FFC107' }
+                                ]} 
+                              />
+                              <Text style={styles.driverDetails}>
+                                {driver.status || 'Status Unknown'}
+                              </Text>
+                            </View>
+                            <Text style={styles.driverVehicle}>
+                              {driver.vehicleType || 'Standard Vehicle'}
+                            </Text>
+                          </View>
+                          {favoriteDriverId === driver.id ? (
+                            <View style={styles.selectedIcon}>
+                              <Check size={16} color="#FFFFFF" />
+                            </View>
+                          ) : (
+                            <Star 
+                              size={20} 
+                              color="#FFD700" 
+                              fill="#FFD700"
+                              style={styles.favoriteStarIcon} 
+                            />
+                          )}
+                        </TouchableOpacity>
+                      ))
+                    ) : (
+                      <View style={styles.emptyDriversContainer}>
+                        <Text style={styles.emptyDriversText}>You don't have any favourite drivers yet</Text>
+                        <Text style={styles.emptyDriversSubtext}>
+                          Drivers will be added to your favourites when you select them during order creation
+                        </Text>
+                        
+                        {/* Add button to show all drivers for adding to favorites */}
+                        <Button
+                          title="Find Drivers to Add"
+                          variant="outline"
+                          onPress={() => {
+                            setShowDriversModal(false);
+                            // Show the all drivers modal after a short delay
+                            setTimeout(() => {
+                              setDriverSearchText('');
+                              setShowAllDriversModal(true);
+                            }, 300);
+                          }}
+                          style={styles.findDriversButton}
+                        />
+                      </View>
+                    )}
+                  </ScrollView>
+                  
+                  <Button
+                    title="Close"
+                    variant="outline"
+                    onPress={() => setShowDriversModal(false)}
+                    style={styles.closeModalButton}
+                  />
+                </View>
+              </View>
+            </Modal>
+          </View>
+
+          {/* Add a separate modal for showing all drivers to add to favorites */}
           <Modal
-            visible={showDriversModal}
+            visible={showAllDriversModal}
             animationType="slide"
             transparent={true}
-            onRequestClose={() => setShowDriversModal(false)}
+            onRequestClose={() => setShowAllDriversModal(false)}
           >
             <View style={styles.modalContainer}>
               <View style={styles.modalContent}>
                 <View style={styles.modalHeader}>
-                  <Text style={styles.modalTitle}>Favourite Drivers</Text>
+                  <Text style={styles.modalTitle}>Add Favourite Drivers</Text>
                   <TouchableOpacity 
                     style={styles.closeButton}
-                    onPress={() => setShowDriversModal(false)}
+                    onPress={() => setShowAllDriversModal(false)}
                   >
-                    <X size={24} color={theme.colors.text.primary} />
+                    <X size={24} color="#FFFFFF" />
                   </TouchableOpacity>
+                </View>
+                
+                <View style={styles.searchContainer}>
+                  <View style={styles.searchInputContainer}>
+                    <Search 
+                      size={20} 
+                      color={theme.colors.text.secondary}
+                      style={styles.searchIcon}
+                    />
+                    <TextInput
+                      style={styles.searchInput}
+                      value={driverSearchText}
+                      onChangeText={setDriverSearchText}
+                      placeholder="Search drivers"
+                    />
+                    {driverSearchText ? (
+                      <TouchableOpacity 
+                        style={styles.clearSearchButton}
+                        onPress={() => setDriverSearchText('')}
+                      >
+                        <X size={16} color={theme.colors.text.secondary} />
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
                 </View>
                 
                 <ScrollView style={styles.driversListContainer}>
                   {loadingDrivers ? (
                     <View style={styles.loadingContainer}>
-                      <ActivityIndicator size="large" color={theme.colors.text.primary} />
-                      <Text style={styles.loadingText}>Loading your favourite drivers...</Text>
+                      <ActivityIndicator size="large" color="#9D76E8" />
+                      <Text style={styles.loadingText}>Loading drivers...</Text>
                     </View>
-                  ) : favoriteDrivers.length > 0 ? (
-                    favoriteDrivers.map(driver => (
-                      <TouchableOpacity 
-                        key={driver.id}
-                        style={[
-                          styles.driverItem,
-                          favoriteDriverId === driver.id && styles.selectedDriverItem
-                        ]}
-                        onPress={() => {
-                          setFavoriteDriverId(driver.id);
-                          setFavoriteDriver(driver.name);
-                          setShowDriversModal(false);
-                        }}
-                      >
-                        <View style={styles.driverAvatar}>
-                          <Text style={styles.driverAvatarText}>
-                            {driver.name ? driver.name.charAt(0).toUpperCase() : 'D'}
-                          </Text>
-                        </View>
-                        <View style={styles.driverInfo}>
-                          <Text style={styles.driverName}>{driver.name}</Text>
-                          <View style={styles.driverStatusContainer}>
-                            <View 
-                              style={[
-                                styles.statusIndicator, 
-                                { backgroundColor: driver.status === 'Available' ? '#4CAF50' : '#FFC107' }
-                              ]} 
-                            />
-                            <Text style={styles.driverDetails}>
-                              {driver.status || 'Status Unknown'}
+                  ) : availableDrivers.length > 0 ? (
+                    availableDrivers
+                      .filter(driver => 
+                        !driverSearchText || 
+                        driver.name.toLowerCase().includes(driverSearchText.toLowerCase())
+                      )
+                      .map(driver => (
+                        <TouchableOpacity 
+                          key={driver.id}
+                          style={styles.driverItem}
+                          onPress={async () => {
+                            await addDriverToFavorites(driver.id, driver.name);
+                            // Close the modal after adding
+                            setShowAllDriversModal(false);
+                          }}
+                        >
+                          <View style={styles.driverAvatar}>
+                            <Text style={styles.driverAvatarText}>
+                              {driver.name ? driver.name.charAt(0).toUpperCase() : 'D'}
                             </Text>
                           </View>
-                          <Text style={styles.driverVehicle}>
-                            {driver.vehicleType || 'Standard Vehicle'}
-                          </Text>
-                        </View>
-                        {favoriteDriverId === driver.id ? (
-                          <View style={styles.selectedIcon}>
-                            <Check size={16} color="#FFFFFF" />
+                          <View style={styles.driverInfo}>
+                            <Text style={styles.driverName}>{driver.name}</Text>
+                            <Text style={styles.driverDetails}>
+                              {driver.vehicleType || 'Standard Vehicle'}
+                            </Text>
                           </View>
-                        ) : (
-                          <Star 
-                            size={20} 
-                            color="#FFD700" 
-                            fill="#FFD700"
-                            style={styles.favoriteStarIcon} 
-                          />
-                        )}
-                      </TouchableOpacity>
-                    ))
+                          <TouchableOpacity
+                            style={styles.favoriteIcon}
+                          >
+                            <Heart size={16} color={theme.colors.text.secondary} />
+                          </TouchableOpacity>
+                        </TouchableOpacity>
+                      ))
                   ) : (
                     <View style={styles.emptyDriversContainer}>
-                      <Text style={styles.emptyDriversText}>You don't have any favourite drivers yet</Text>
-                      <Text style={styles.emptyDriversSubtext}>
-                        Drivers will be added to your favourites when you select them during order creation
-                      </Text>
-                      
-                      {/* Add button to show all drivers for adding to favorites */}
-                      <Button
-                        title="Find Drivers to Add"
-                        variant="outline"
-                        onPress={() => {
-                          setShowDriversModal(false);
-                          // Show the all drivers modal after a short delay
-                          setTimeout(() => {
-                            setDriverSearchText('');
-                            setShowAllDriversModal(true);
-                          }, 300);
-                        }}
-                        style={styles.findDriversButton}
-                      />
+                      <Text style={styles.emptyDriversText}>No drivers available</Text>
                     </View>
                   )}
                 </ScrollView>
@@ -1025,182 +1211,176 @@ export default function CreateOrderScreen({ navigation }) {
                 <Button
                   title="Close"
                   variant="outline"
-                  onPress={() => setShowDriversModal(false)}
+                  onPress={() => setShowAllDriversModal(false)}
                   style={styles.closeModalButton}
                 />
               </View>
             </View>
           </Modal>
-        </View>
 
-        {/* Add a separate modal for showing all drivers to add to favorites */}
-        <Modal
-          visible={showAllDriversModal}
-          animationType="slide"
-          transparent={true}
-          onRequestClose={() => setShowAllDriversModal(false)}
-        >
-          <View style={styles.modalContainer}>
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Add Favourite Drivers</Text>
-                <TouchableOpacity 
-                  style={styles.closeButton}
-                  onPress={() => setShowAllDriversModal(false)}
-                >
-                  <X size={24} color={theme.colors.text.primary} />
-                </TouchableOpacity>
+          {/* Order Summary */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Order Summary</Text>
+            
+            <LinearGradient
+              colors={['#252525', '#1E1E1E']}
+              style={styles.summaryGradient}
+            >
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Distance</Text>
+                <Text style={styles.summaryValue}>{distance} km</Text>
               </View>
               
-              <View style={styles.searchContainer}>
-                <View style={styles.searchInputContainer}>
-                  <Search 
-                    size={20} 
-                    color={theme.colors.text.secondary}
-                    style={styles.searchIcon}
-                  />
-                  <TextInput
-                    style={styles.searchInput}
-                    value={driverSearchText}
-                    onChangeText={setDriverSearchText}
-                    placeholder="Search drivers"
-                  />
-                  {driverSearchText ? (
-                    <TouchableOpacity 
-                      style={styles.clearSearchButton}
-                      onPress={() => setDriverSearchText('')}
+              <View style={styles.divider} />
+              
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Delivery Type</Text>
+                <Text style={styles.summaryValue}>
+                  {deliveryTypes.find(t => t.id === deliveryType)?.name || 'Standard'}
+                </Text>
+              </View>
+              
+              <View style={styles.divider} />
+              
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Base Fee</Text>
+                <Text style={styles.summaryValue}>
+                  ${deliveryTypes.find(t => t.id === deliveryType)?.price || 10}
+                </Text>
+              </View>
+              
+              {distance > 1 && (
+                <>
+                  <View style={styles.divider} />
+                  <View style={styles.summaryRow}>
+                    <Text style={styles.summaryLabel}>Distance Fee</Text>
+                    <Text style={styles.summaryValue}>
+                      ${(cost - (deliveryTypes.find(t => t.id === deliveryType)?.price || 10)).toFixed(2)}
+                    </Text>
+                  </View>
+                </>
+              )}
+              
+              <View style={styles.divider} />
+              
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>Total Cost</Text>
+                <Text style={styles.totalValue}>${cost.toFixed(2)}</Text>
+              </View>
+            </LinearGradient>
+          </View>
+
+          {/* Place Order Button */}
+          <Button
+            title={isLoading ? "Processing..." : "Place Order"}
+            onPress={handlePlaceOrder}
+            disabled={isLoading || !pickupAddress || !deliveryAddress}
+            style={styles.placeOrderButton}
+          />
+        </ScrollView>
+      </View>
+
+      {/* This portal is at the root level, outside any scrollview context */}
+      {Object.keys(global._activePredictions || {}).map(key => {
+        const predData = global._activePredictions[key];
+        if (!predData || !predData.visible || !predData.predictions || !predData.predictions.length) return null;
+        
+        return (
+          <View 
+            key={`${key}-${renderKey}`}
+            style={[
+              StyleSheet.absoluteFill,
+              {
+                pointerEvents: 'box-none',
+                zIndex: 9999
+              }
+            ]}
+          >
+            <View 
+              style={[
+                styles.predictionsOverlayRoot,
+                {
+                  position: 'absolute',
+                  top: predData.position.top,
+                  left: predData.position.left,
+                  width: predData.position.width,
+                }
+              ]}
+            >
+              <View style={styles.predictionsContainer}>
+                <Text style={styles.predictionsTitle}>Suggestions</Text>
+                {predData.predictions.map((item, index) => (
+                  <React.Fragment key={item.place_id}>
+                    <TouchableOpacity
+                      style={[
+                        styles.predictionItem,
+                        predData.hoveredItem === item.place_id && styles.predictionItemHovered
+                      ]}
+                      onPress={() => predData.onSelect(item.place_id, item.description)}
+                      activeOpacity={0.7}
+                      onPressIn={() => predData.setHovered(item.place_id)}
+                      onPressOut={() => predData.setHovered(null)}
                     >
-                      <X size={16} color={theme.colors.text.secondary} />
+                      <MapPin 
+                        size={16} 
+                        color="#9D76E8"
+                        style={styles.predictionIcon}
+                      />
+                      <Text style={styles.predictionText} numberOfLines={1}>
+                        {item.description}
+                      </Text>
                     </TouchableOpacity>
-                  ) : null}
-                </View>
+                    {index < predData.predictions.length - 1 && (
+                      <View style={styles.predictionSeparator} />
+                    )}
+                  </React.Fragment>
+                ))}
               </View>
-              
-              <ScrollView style={styles.driversListContainer}>
-                {loadingDrivers ? (
-                  <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color={theme.colors.text.primary} />
-                    <Text style={styles.loadingText}>Loading drivers...</Text>
-                  </View>
-                ) : availableDrivers.length > 0 ? (
-                  availableDrivers
-                    .filter(driver => 
-                      !driverSearchText || 
-                      driver.name.toLowerCase().includes(driverSearchText.toLowerCase())
-                    )
-                    .map(driver => (
-                      <TouchableOpacity 
-                        key={driver.id}
-                        style={styles.driverItem}
-                        onPress={async () => {
-                          await addDriverToFavorites(driver.id, driver.name);
-                          // Close the modal after adding
-                          setShowAllDriversModal(false);
-                        }}
-                      >
-                        <View style={styles.driverAvatar}>
-                          <Text style={styles.driverAvatarText}>
-                            {driver.name ? driver.name.charAt(0).toUpperCase() : 'D'}
-                          </Text>
-                        </View>
-                        <View style={styles.driverInfo}>
-                          <Text style={styles.driverName}>{driver.name}</Text>
-                          <Text style={styles.driverDetails}>
-                            {driver.vehicleType || 'Standard Vehicle'}
-                          </Text>
-                        </View>
-                        <TouchableOpacity
-                          style={styles.favoriteIcon}
-                        >
-                          <Heart size={16} color={theme.colors.text.secondary} />
-                        </TouchableOpacity>
-                      </TouchableOpacity>
-                    ))
-                ) : (
-                  <View style={styles.emptyDriversContainer}>
-                    <Text style={styles.emptyDriversText}>No drivers available</Text>
-                  </View>
-                )}
-              </ScrollView>
-              
-              <Button
-                title="Close"
-                variant="outline"
-                onPress={() => setShowAllDriversModal(false)}
-                style={styles.closeModalButton}
-              />
             </View>
           </View>
-        </Modal>
-
-        {/* Order Summary */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Order Summary</Text>
-          
-          <LinearGradient
-            colors={['#F8F8F8', '#FFFFFF']}
-            style={styles.summaryGradient}
-          >
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Distance</Text>
-              <Text style={styles.summaryValue}>{distance} km</Text>
-            </View>
-            
-            <View style={styles.divider} />
-            
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Delivery Type</Text>
-              <Text style={styles.summaryValue}>
-                {deliveryTypes.find(t => t.id === deliveryType)?.name || 'Standard'}
-              </Text>
-            </View>
-            
-            <View style={styles.divider} />
-            
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Base Fee</Text>
-              <Text style={styles.summaryValue}>
-                ${deliveryTypes.find(t => t.id === deliveryType)?.price || 10}
-              </Text>
-            </View>
-            
-            {distance > 1 && (
-              <>
-                <View style={styles.divider} />
-                <View style={styles.summaryRow}>
-                  <Text style={styles.summaryLabel}>Distance Fee</Text>
-                  <Text style={styles.summaryValue}>
-                    ${(cost - (deliveryTypes.find(t => t.id === deliveryType)?.price || 10)).toFixed(2)}
-                  </Text>
+        );
+      })}
+      
+      {/* Success Modal */}
+      <Modal
+        visible={showSuccessModal}
+        transparent={true}
+        animationType="fade"
+      >
+        <View style={styles.successModalContainer}>
+          <View style={styles.successModalContent}>
+            <LinearGradient
+              colors={['#252525', '#1E1E1E']}
+              style={styles.successModalGradient}
+            >
+              <View style={styles.successIconContainer}>
+                <View style={styles.successIconCircle}>
+                  <Check size={40} color="#FFFFFF" />
                 </View>
-              </>
-            )}
-            
-            <View style={styles.divider} />
-            
-            <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>Total Cost</Text>
-              <Text style={styles.totalValue}>${cost.toFixed(2)}</Text>
-            </View>
-          </LinearGradient>
+              </View>
+              <Text style={styles.successModalTitle}>Order Placed Successfully!</Text>
+              <Text style={styles.successModalMessage}>
+                Your order has been received. A driver will be assigned to your delivery shortly.
+              </Text>
+              <View style={styles.successModalDivider} />
+              <View style={styles.loadingRow}>
+                <ActivityIndicator size="small" color={theme.colors.primary} />
+                <Text style={styles.loadingText}>
+                  Redirecting to orders in {countdown}s...
+                </Text>
+              </View>
+            </LinearGradient>
+          </View>
         </View>
-
-        {/* Place Order Button */}
-        <Button
-          title={isLoading ? "Processing..." : "Place Order"}
-          onPress={handlePlaceOrder}
-          disabled={isLoading || !pickupAddress || !deliveryAddress}
-          style={styles.placeOrderButton}
-        />
-      </ScrollView>
-    </View>
+      </Modal>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#000000',
   },
   header: {
     flexDirection: 'row',
@@ -1209,7 +1389,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
     paddingBottom: 16,
-    backgroundColor: theme.colors.primary,
+    backgroundColor: '#000000',
+    borderBottomWidth: 0,
   },
   backButton: {
     width: 40,
@@ -1217,42 +1398,45 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '600',
     color: '#FFFFFF',
   },
   scrollView: {
     flex: 1,
+    backgroundColor: '#000000',
   },
   scrollViewContent: {
     paddingHorizontal: 16,
     paddingBottom: 100,
+    backgroundColor: '#000000',
   },
   section: {
     marginTop: 20,
     marginBottom: 20,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    backgroundColor: '#1E1E1E',
+    borderRadius: 16,
     padding: 16,
+    zIndex: 1,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
       },
       android: {
-        elevation: 3,
+        elevation: 4,
       },
     }),
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#333',
+    color: '#FFFFFF',
     marginBottom: 16,
   },
   deliveryTypeContainer: {
@@ -1261,35 +1445,38 @@ const styles = StyleSheet.create({
   },
   deliveryTypeOption: {
     width: '48%',
-    borderRadius: 12,
+    borderRadius: 16,
     overflow: 'hidden',
+    backgroundColor: '#1E1E1E',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.06,
-        shadowRadius: 3,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
       },
       android: {
-        elevation: 2,
+        elevation: 4,
       },
     }),
   },
-  deliveryTypeSelected: {},
+  deliveryTypeSelected: {
+    borderColor: theme.colors.primary,
+    borderWidth: 2,
+  },
   deliveryTypeGradient: {
     padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.03)',
+    borderRadius: 16,
     height: 140,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: 'transparent',
   },
   deliveryTypeIcon: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(157, 118, 232, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
@@ -1297,19 +1484,19 @@ const styles = StyleSheet.create({
   deliveryTypeName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
+    color: '#FFFFFF',
     marginVertical: 4,
   },
   deliveryTypeDescription: {
     fontSize: 12,
-    color: '#666',
+    color: '#CCCCCC',
     textAlign: 'center',
     marginBottom: 4,
   },
   deliveryTypePrice: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#333',
+    color: '#FFFFFF',
   },
   deliveryTypeTextSelected: {
     color: '#FFFFFF',
@@ -1319,25 +1506,27 @@ const styles = StyleSheet.create({
   },
   inputLabel: {
     fontSize: 14,
-    color: '#666',
+    color: '#CCCCCC',
     marginBottom: 8,
   },
   input: {
-    backgroundColor: '#F0F0F0',
-    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 16,
-    color: '#333',
+    color: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   addressInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F0F0F0',
-    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: 12,
     paddingHorizontal: 16,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
     minHeight: 50,
   },
   addressIcon: {
@@ -1347,233 +1536,97 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 12,
     fontSize: 16,
-    color: '#333',
+    color: '#FFFFFF',
     minWidth: '70%',
     height: 48,
   },
-  favoriteDriverButton: {
-    borderRadius: 8,
-    overflow: 'hidden',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.06,
-        shadowRadius: 3,
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
-  },
-  favoriteDriverGradient: {
-    padding: 16,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.03)',
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  favoriteDriverIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#F0F0F0',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  favoriteDriverText: {
-    flex: 1,
-    fontSize: 16,
-    color: '#333',
-  },
-  starIcon: {
-    marginLeft: 8,
-  },
-  favoriteStarIcon: {
-    marginRight: 10,
-  },
-  driverStatusContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  statusIndicator: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
-  },
-  driverVehicle: {
-    fontSize: 14,
-    color: '#666',
-  },
-  emptyDriversContainer: {
-    padding: 24,
-    alignItems: 'center',
-  },
-  emptyDriversText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  emptyDriversSubtext: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-  },
-  closeModalButton: {
-    marginTop: 20,
-  },
-  summaryGradient: {
-    padding: 16,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.03)',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.06,
-        shadowRadius: 3,
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  summaryLabel: {
-    fontSize: 16,
-    color: '#666',
-  },
-  summaryValue: {
-    fontSize: 16,
-    color: '#333',
-    fontWeight: '500',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#E0E0E0',
-    marginVertical: 4,
-  },
-  totalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    marginTop: 8,
-  },
-  totalLabel: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-  },
-  totalValue: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#333',
-  },
-  placeOrderButton: {
-    marginTop: 24,
-    backgroundColor: theme.colors.primary,
-    paddingVertical: 16,
-  },
-  autocompleteContainer: {
-    position: 'relative',
-    zIndex: 1,
-    marginBottom: 60,
-  },
-  predictionsContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    marginTop: 4,
+  dropdownWrapper: {
     position: 'absolute',
+    top: 0,
     left: 0,
     right: 0,
+    bottom: 0,
+    zIndex: 9999,
+    elevation: 9999,
+  },
+  predictionsOverlay: {
+    position: 'absolute',
     top: 52,
-    zIndex: 2,
+    left: 0,
+    right: 0,
+    zIndex: 9999,
+    elevation: 9999,
+  },
+  predictionsContainer: {
+    backgroundColor: '#121212',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#333333',
+    padding: 6,
+    paddingBottom: 6,
+    zIndex: 9999,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.8,
+        shadowRadius: 20,
       },
       android: {
-        elevation: 4,
+        elevation: 24,
       },
     }),
   },
+  predictionsTitle: {
+    fontSize: 12,
+    color: '#9D76E8',
+    fontWeight: '600',
+    marginLeft: 12,
+    marginBottom: 4,
+    marginTop: 4,
+    backgroundColor: '#121212',
+  },
   predictionsList: {
-    maxHeight: 200,
+    maxHeight: 160,
+    backgroundColor: '#121212',
   },
   predictionItem: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginBottom: 2,
+    backgroundColor: '#121212',
+  },
+  predictionItemHovered: {
+    backgroundColor: '#1E1E1E',
+  },
+  predictionText: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    fontWeight: '400',
+    flex: 1,
   },
   predictionIcon: {
     marginRight: 8,
   },
-  predictionText: {
-    fontSize: 14,
-    color: '#333',
-  },
-  packageTypeContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 12,
-  },
-  packageTypeOption: {
-    flex: 1,
-    borderRadius: 8,
-    marginHorizontal: 5,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    overflow: 'hidden',
-  },
-  packageTypeSelected: {
-    borderWidth: 0,
-  },
-  packageTypeGradient: {
-    padding: 16,
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  packageTypeName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    textAlign: 'center',
-  },
-  packageTypeTextSelected: {
-    color: '#FFFFFF',
+  predictionSeparator: {
+    height: 1,
+    backgroundColor: '#333333',
+    marginVertical: 1,
+    marginLeft: 40,
+    marginRight: 16,
   },
   modalContainer: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
   },
   modalContent: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    backgroundColor: '#121212',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 32,
@@ -1588,40 +1641,165 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#333',
+    color: '#FFFFFF',
   },
   closeButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#F0F0F0',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  driversListContainer: {
-    maxHeight: 400,
+  summaryGradient: {
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#1E1E1E',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
-  loadingContainer: {
-    padding: 24,
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    paddingVertical: 8,
   },
-  loadingText: {
-    marginTop: 16,
+  summaryLabel: {
     fontSize: 16,
-    color: '#666',
+    color: '#CCCCCC',
+  },
+  summaryValue: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    fontWeight: '500',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    marginVertical: 4,
+  },
+  totalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    marginTop: 8,
+  },
+  totalLabel: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  totalValue: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  placeOrderButton: {
+    marginTop: 24,
+    backgroundColor: theme.colors.primary,
+    paddingVertical: 16,
+    borderRadius: 12,
+  },
+  packageTypeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 12,
+  },
+  packageTypeOption: {
+    flex: 1,
+    borderRadius: 12,
+    marginHorizontal: 5,
+    backgroundColor: '#1E1E1E',
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
+  },
+  packageTypeSelected: {
+    borderWidth: 2,
+    borderColor: theme.colors.primary,
+  },
+  packageTypeGradient: {
+    padding: 16,
+    alignItems: 'center',
+    borderRadius: 12,
+  },
+  packageTypeName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
+  packageTypeTextSelected: {
+    color: '#FFFFFF',
+  },
+  favoriteDriverButton: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#1E1E1E',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
+  },
+  favoriteDriverGradient: {
+    padding: 16,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+  },
+  favoriteDriverIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(157, 118, 232, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  favoriteDriverText: {
+    flex: 1,
+    fontSize: 16,
+    color: '#FFFFFF',
   },
   driverItem: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
-    borderRadius: 8,
+    borderRadius: 12,
     marginBottom: 8,
-    backgroundColor: '#F0F0F0',
+    backgroundColor: '#252525',
   },
   selectedDriverItem: {
-    backgroundColor: 'rgba(0, 0, 0, 0.05)',
+    backgroundColor: '#2D2D2D',
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: theme.colors.primary,
   },
   driverAvatar: {
     width: 50,
@@ -1643,24 +1821,116 @@ const styles = StyleSheet.create({
   driverName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
+    color: '#FFFFFF',
     marginBottom: 4,
   },
   driverDetails: {
     fontSize: 14,
-    color: '#666',
+    color: '#CCCCCC',
   },
-  selectedIcon: {
-    width: 24,
-    height: 24,
+  uploadButton: {
     borderRadius: 12,
-    backgroundColor: theme.colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
+    overflow: 'hidden',
+    backgroundColor: '#1E1E1E',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
-  imageUploadButtons: {
+  uploadGradient: {
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    backgroundColor: 'transparent',
+  },
+  uploadText: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    marginLeft: 8,
+  },
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#FFFFFF',
+  },
+  autocompleteContainer: {
+    position: 'relative',
+    zIndex: 1000,
+    marginBottom: 30,
+  },
+  favoriteDriverToggleContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  starIcon: {
+    marginLeft: 8,
+  },
+  favoriteStarIcon: {
+    marginRight: 10,
+  },
+  driverStatusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  statusIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  driverVehicle: {
+    fontSize: 14,
+    color: theme.colors.text.secondary,
+  },
+  emptyDriversContainer: {
+    padding: 24,
+    alignItems: 'center',
+  },
+  emptyDriversText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.text.primary,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  emptyDriversSubtext: {
+    fontSize: 14,
+    color: theme.colors.text.secondary,
+    textAlign: 'center',
+  },
+  closeModalButton: {
+    marginTop: 20,
+  },
+  searchContainer: {
+    marginBottom: 16,
+  },
+  favoriteIcon: {
+    padding: 4,
+  },
+  findDriversButton: {
+    marginTop: 16,
   },
   packageImageContainer: {
     position: 'relative',
@@ -1702,77 +1972,144 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  searchContainer: {
-    marginBottom: 16,
-  },
-  searchInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F0F0F0',
-    borderRadius: 8,
-    paddingHorizontal: 16,
-  },
-  searchIcon: {
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: '#333',
-  },
-  clearSearchButton: {
-    padding: 4,
-  },
-  findDriversButton: {
-    marginTop: 16,
-  },
-  favoriteIcon: {
-    padding: 4,
-  },
-  favoriteDriverToggleContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  googlePlacesContainer: {
-    position: 'relative',
-    zIndex: 3,
-    marginBottom: 20,
-  },
-  uploadButton: {
-    borderRadius: 8,
-    overflow: 'hidden',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.06,
-        shadowRadius: 3,
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
-  },
-  uploadGradient: {
-    padding: 16,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.03)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
-  uploadText: {
-    fontSize: 16,
-    color: '#666',
-    marginLeft: 8,
-  },
   packageImage: {
     width: '100%',
     height: 200,
     borderRadius: 8,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#CCCCCC',
+  },
+  imageUploadButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  googlePlacesContainer: {
+    marginBottom: 30,
+    zIndex: 1,
+  },
+  predictionsOverlayRoot: {
+    backgroundColor: 'transparent',
+    zIndex: 9999,
+    elevation: 9999,
+    maxHeight: 200,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  halfInputContainer: {
+    flex: 1,
+  },
+  inlineLabel: {
+    width: 90,
+    marginRight: 12,
+    alignSelf: 'center',
+    marginBottom: 0,
+  },
+  compactInput: {
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    height: 45,
+  },
+  textAreaInput: {
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    minHeight: 100,
+    textAlignVertical: 'top',
+  },
+  successModalContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+  },
+  successModalContent: {
+    width: '85%',
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.5,
+        shadowRadius: 16,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
+  },
+  successModalGradient: {
+    width: '100%',
+    padding: 24,
+    alignItems: 'center',
+  },
+  successIconContainer: {
+    marginBottom: 20,
+    backgroundColor: theme.colors.primary,
+    borderRadius: 50,
+    width: 100,
+    height: 100,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  successIconCircle: {
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+    borderRadius: 40,
+    width: 80,
+    height: 80,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  successModalTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  successModalMessage: {
+    fontSize: 16,
+    lineHeight: 24,
+    color: 'rgba(255, 255, 255, 0.8)',
+    textAlign: 'center',
+    paddingHorizontal: 16,
+  },
+  successModalDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    marginVertical: 16,
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginLeft: 8,
+    fontSize: 16,
+    color: '#FFFFFF',
   },
 }); 

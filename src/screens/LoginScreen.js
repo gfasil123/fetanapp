@@ -196,7 +196,7 @@ const styles = StyleSheet.create({
   button: {
     marginTop: theme.spacing.lg,
     height: 56,
-    backgroundColor: theme.colors.navbar.background,
+    backgroundColor: undefined,
   },
   footer: {
     flexDirection: 'row',

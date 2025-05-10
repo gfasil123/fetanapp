@@ -2,9 +2,18 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { Order } from '../types';
 import { PackageCheck, MapPin, Clock, Truck as TruckDelivery } from 'lucide-react-native';
+import { theme } from '../src/theme';
+
+// Extend the Order type to account for Firestore timestamp and totalAmount
+type ExtendedOrder = Order & {
+  createdAt?: {
+    toDate?: () => Date;
+  } | Date;
+  totalAmount?: number;
+};
 
 type OrderItemProps = {
-  order: Order;
+  order: ExtendedOrder;
   userRole?: 'customer' | 'driver' | 'admin';
   onPress?: () => void;
 };
@@ -14,18 +23,18 @@ export default function OrderItem({ order, userRole = 'customer', onPress }: Ord
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending':
-        return '#FFCC00'; // warning yellow
+        return '#FABD64'; // warning orange from theme
       case 'accepted':
-        return '#3366FF'; // primary blue
+        return theme.colors.primary; // primary purple
       case 'picked_up':
       case 'in_transit':
-        return '#FF9500'; // accent orange
+        return '#FA6464'; // accent red from theme
       case 'delivered':
-        return '#34C759'; // success green
+        return '#50C878'; // success green from theme
       case 'cancelled':
-        return '#FF3B30'; // error red
+        return theme.colors.danger; // error red
       default:
-        return '#999999';
+        return theme.colors.text.tertiary;
     }
   };
 
@@ -48,7 +57,7 @@ export default function OrderItem({ order, userRole = 'customer', onPress }: Ord
     >
       <View style={styles.header}>
         <View style={styles.row}>
-          <PackageCheck size={20} color="#3366FF" />
+          <PackageCheck size={20} color={theme.colors.primary} />
           <Text style={styles.orderId}>Order #{order.id.substring(0, 8)}</Text>
         </View>
         <View style={[styles.statusBadge, { backgroundColor: getStatusColor(order.status) }]}>
@@ -58,31 +67,46 @@ export default function OrderItem({ order, userRole = 'customer', onPress }: Ord
 
       <View style={styles.addressContainer}>
         <View style={styles.addressRow}>
-          <MapPin size={18} color="#FF9500" style={styles.icon} />
+          <MapPin size={18} color="#FA6464" style={styles.icon} />
           <Text style={styles.addressText} numberOfLines={1}>
-            {order.pickupAddress.address}
+            {typeof order.pickupAddress === 'object' 
+              ? order.pickupAddress?.address || 'No pickup address'
+              : order.pickupAddress || 'No pickup address'}
           </Text>
         </View>
         <View style={styles.separator} />
         <View style={styles.addressRow}>
-          <MapPin size={18} color="#3366FF" style={styles.icon} />
+          <MapPin size={18} color="#50C878" style={styles.icon} />
           <Text style={styles.addressText} numberOfLines={1}>
-            {order.deliveryAddress.address}
+            {typeof order.deliveryAddress === 'object' 
+              ? order.deliveryAddress?.address || 'No delivery address'
+              : order.deliveryAddress || 'No delivery address'}
           </Text>
         </View>
       </View>
 
       <View style={styles.footer}>
         <View style={styles.row}>
-          <Clock size={16} color="#666" style={{ marginRight: 4 }} />
+          <Clock size={16} color={theme.colors.text.secondary} style={{ marginRight: 4 }} />
           <Text style={styles.timeText}>
-            {formatDate(order.createdAt)}
+            {(() => {
+              try {
+                return order.createdAt && typeof order.createdAt === 'object' && 'toDate' in order.createdAt && typeof order.createdAt.toDate === 'function'
+                  ? formatDate(new Date(order.createdAt.toDate())) 
+                  : 'No date available';
+              } catch (error) {
+                console.error('Error formatting date:', error);
+                return 'No date available';
+              }
+            })()}
           </Text>
         </View>
 
         <View style={styles.row}>
-          <TruckDelivery size={16} color="#666" style={{ marginRight: 4 }} />
-          <Text style={styles.priceText}>${order.price.toFixed(2)}</Text>
+          <TruckDelivery size={16} color={theme.colors.text.secondary} style={{ marginRight: 4 }} />
+          <Text style={styles.priceText}>
+            ${order.price ? order.price.toFixed(2) : order.totalAmount ? order.totalAmount.toFixed(2) : '0.00'}
+          </Text>
         </View>
       </View>
     </TouchableOpacity>
@@ -91,27 +115,11 @@ export default function OrderItem({ order, userRole = 'customer', onPress }: Ord
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.borderRadius.md,
     padding: 16,
     marginBottom: 12,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 3,
-      },
-      web: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-      },
-    }),
+    ...theme.shadows.sm,
   },
   header: {
     flexDirection: 'row',
@@ -125,23 +133,23 @@ const styles = StyleSheet.create({
   },
   orderId: {
     fontSize: 16,
-    fontWeight: '600',
+    fontFamily: theme.typography.fontFamily.semibold,
     marginLeft: 6,
-    color: '#333',
+    color: theme.colors.text.primary,
   },
   statusBadge: {
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: theme.borderRadius.full,
   },
   statusText: {
     color: '#fff',
     fontSize: 12,
-    fontWeight: '600',
+    fontFamily: theme.typography.fontFamily.medium,
   },
   addressContainer: {
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
+    backgroundColor: theme.colors.backgroundAlt,
+    borderRadius: theme.borderRadius.sm,
     padding: 12,
     marginBottom: 12,
   },
@@ -155,26 +163,32 @@ const styles = StyleSheet.create({
   },
   addressText: {
     fontSize: 14,
-    color: '#333',
+    color: theme.colors.text.primary,
+    fontFamily: theme.typography.fontFamily.regular,
     flex: 1,
   },
   separator: {
     height: 1,
-    backgroundColor: '#e0e0e0',
+    backgroundColor: theme.colors.border,
     marginVertical: 8,
   },
   footer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+    paddingTop: 12,
+    marginTop: 4,
   },
   timeText: {
     fontSize: 13,
-    color: '#666',
+    color: theme.colors.text.secondary,
+    fontFamily: theme.typography.fontFamily.regular,
   },
   priceText: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
+    fontFamily: theme.typography.fontFamily.semibold,
+    color: theme.colors.text.primary,
   },
 });

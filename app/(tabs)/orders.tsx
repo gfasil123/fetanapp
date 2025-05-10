@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, ScrollView, Alert, Platform } from 'react-native';
 import { useAuth } from '../../hooks/useAuth';
 import { useOrders } from '../../hooks/useOrders';
 import RoleBasedGuard from '../../components/RoleBasedGuard';
@@ -172,7 +172,7 @@ export default function CustomerOrdersScreen() {
           />
         ) : (
           <View style={styles.emptyContainer}>
-            <Package size={64} color="#CCCCCC" />
+            <Package size={64} color="#666666" />
             <Text style={styles.emptyText}>No orders found</Text>
             {statusFilter !== 'all' ? (
               <Text style={styles.emptySubtext}>
@@ -198,7 +198,7 @@ export default function CustomerOrdersScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#121212',
   },
   header: {
     flexDirection: 'row',
@@ -207,12 +207,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 60,
     paddingBottom: 16,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#121212',
   },
   title: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#333',
+    color: '#FFFFFF',
   },
   filterButton: {
     padding: 8,
@@ -220,13 +220,13 @@ const styles = StyleSheet.create({
   filtersContainer: {
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#121212',
     marginBottom: 8,
   },
   filterChip: {
     paddingHorizontal: 16,
     paddingVertical: 8,
-    backgroundColor: '#f0f3f8',
+    backgroundColor: '#2D2D2D',
     borderRadius: 20,
     marginRight: 8,
   },
@@ -234,7 +234,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#3366FF',
   },
   filterChipText: {
-    color: '#333',
+    color: '#CCCCCC',
     fontWeight: '500',
   },
   activeFilterChipText: {
@@ -251,7 +251,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#333',
+    color: '#CCCCCC',
   },
   emptyContainer: {
     flex: 1,
@@ -262,14 +262,15 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#333',
-    marginTop: 16,
+    marginBottom: 8,
+    color: '#FFFFFF',
   },
   emptySubtext: {
     fontSize: 14,
-    color: '#666',
+    marginBottom: 20,
+    color: '#CCCCCC',
     textAlign: 'center',
-    marginTop: 8,
+    paddingHorizontal: 20,
   },
   errorContainer: {
     flex: 1,
@@ -280,14 +281,15 @@ const styles = StyleSheet.create({
   errorTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#333',
     marginTop: 16,
+    color: '#FFFFFF',
   },
   errorText: {
     fontSize: 14,
-    color: '#666',
+    color: '#CCCCCC',
     textAlign: 'center',
     marginTop: 8,
+    marginHorizontal: 32,
   }
 });
 

@@ -14,61 +14,61 @@ SplashScreen.preventAutoHideAsync().catch(() => {
   console.warn("Error preventing splash screen from auto-hiding");
 });
 
-// App theme colors - Updated to match monochromatic design
+// App theme colors - Dark theme with purple accents
 export const theme = {
   colors: {
     // Primary colors
-    primary: '#333333', // Dark gray (previously blue) - from image
-    primaryDark: '#222222', // Darker gray for hover/press states
-    primaryLight: '#F7F7F7', // Very light gray for backgrounds
+    primary: '#9D76E8', // Purple accent color from the image
+    primaryDark: '#7B51D2', // Darker purple for hover/press states
+    primaryLight: '#BF9DF2', // Lighter purple for subtle accents
     
     // Secondary/accent colors
-    secondary: '#666666', // Medium gray for secondary elements
-    accent1: '#FA6464', // Red accent for highlights - keeping this as in the image
-    accent2: '#50C878', // Green for success/positive indicators - keeping this
-    accent3: '#777777', // Another gray tone for special elements
+    secondary: '#555555', // Medium gray for secondary elements
+    accent1: '#FA6464', // Red accent for alerts/errors
+    accent2: '#50C878', // Green for success/positive indicators
+    accent3: '#E0C3FC', // Light purple accent
     
     // UI colors
-    background: '#FFFFFF', // Pure white background (from image)
-    backgroundAlt: '#F5F5F5', // Very light gray for alternate backgrounds
-    card: '#FFFFFF', // White for cards
-    cardAlt: '#FAFAFA', // Slight off-white for alternate cards
+    background: '#121212', // Near black background
+    backgroundAlt: '#1E1E1E', // Slightly lighter background
+    card: '#252525', // Dark card background
+    cardAlt: '#2D2D2D', // Slightly lighter card background
     
     // Text colors
     text: {
-      primary: '#222222', // Near black for primary text
-      secondary: '#666666', // Medium gray for secondary text
-      tertiary: '#999999', // Light gray for tertiary text
-      contrast: '#FFFFFF', // White text for dark backgrounds
-      accent: '#333333', // Dark gray accent text (previously blue)
+      primary: '#FFFFFF', // White for primary text
+      secondary: '#CCCCCC', // Light gray for secondary text
+      tertiary: '#999999', // Darker gray for tertiary text
+      contrast: '#000000', // Black text for light backgrounds
+      accent: '#BF9DF2', // Light purple accent text
     },
     
     // Status colors
     success: '#50C878', // Green for success states
     warning: '#FABD64', // Orange for warning states
     danger: '#FA6464', // Red for error states
-    info: '#777777', // Gray for info states (previously blue)
+    info: '#9D76E8', // Purple for info states
     
     // Gradient colors
     gradient: {
-      primary: ['#333333', '#555555'], // Gray gradient
+      primary: ['#9D76E8', '#7B51D2'], // Purple gradient
       success: ['#50C878', '#4CAF50'], // Green gradient
       warning: ['#FABD64', '#F5A623'], // Orange gradient
-      purple: ['#777777', '#999999'], // Gray gradient (previously purple)
-      gray: ['#555555', '#333333'], // Dark gray gradient
+      purple: ['#BF9DF2', '#9D76E8'], // Light to darker purple gradient
+      gray: ['#333333', '#1E1E1E'], // Dark gray gradient
     },
     
     // UI element colors
-    border: '#EEEEEE', // Light border color
-    divider: '#F0F0F0', // Very light divider color
+    border: '#333333', // Dark border color
+    divider: '#333333', // Dark divider color
     shadow: '#000000', // Shadow color with variable opacity
-    overlay: 'rgba(0, 0, 0, 0.3)', // Overlay color
+    overlay: 'rgba(0, 0, 0, 0.5)', // Overlay color
     
     // Dark mode navbar - Matches the reference design
     navbar: {
-      background: '#222222', // Black for nav bar (from image)
-      active: '#FFFFFF',
-      inactive: '#AAAAAA',
+      background: '#121212', // Black for nav bar
+      active: '#9D76E8', // Purple for active item
+      inactive: '#666666', // Gray for inactive items
     }
   },
   
@@ -122,44 +122,44 @@ export const theme = {
   shadows: {
     sm: {
       shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.05,
-      shadowRadius: 2,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.3,
+      shadowRadius: 4,
       elevation: 2,
     },
     md: {
       shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.08,
-      shadowRadius: 4,
+      shadowOffset: { width: 0, height: 3 },
+      shadowOpacity: 0.4,
+      shadowRadius: 6,
       elevation: 4,
     },
     lg: {
       shadowColor: '#000',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.1,
-      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 5 },
+      shadowOpacity: 0.5,
+      shadowRadius: 10,
       elevation: 8,
     },
     xl: {
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 8 },
-      shadowOpacity: 0.12,
+      shadowOpacity: 0.6,
       shadowRadius: 16,
       elevation: 16,
     },
     // Colored shadows for cards
     blue: {
-      shadowColor: '#333333', // Changed from blue to gray
+      shadowColor: '#9D76E8', // Purple shadow
       shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.15,
+      shadowOpacity: 0.2,
       shadowRadius: 8,
       elevation: 8,
     },
     accent: {
       shadowColor: '#FA6464',
       shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.15,
+      shadowOpacity: 0.2,
       shadowRadius: 8,
       elevation: 8,
     },
@@ -319,23 +319,32 @@ export default function RootLayout() {
 
   return (
     <>
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: theme.colors.background },
-          animation: Platform.OS === 'web' ? 'none' : 'default',
-        }}
-      >
-        <Stack.Screen name="+not-found" />
-        <Stack.Screen name="index" options={{ title: 'DeliverEase' }} />
-        <Stack.Screen name="login" options={{ title: 'Login' }} />
-        <Stack.Screen name="register" options={{ title: 'Register' }} />
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      </Stack>
-      <StatusBar style="dark" />
+      {/* Status bar configuration */}
+      <StatusBar style="light" backgroundColor="#121212" />
       
-      {showSplash && (
+      {showSplash ? (
         <CustomSplashScreen onAnimationComplete={handleSplashComplete} />
+      ) : (
+        <Stack
+          screenOptions={{
+            headerStyle: {
+              backgroundColor: theme.colors.navbar.background,
+            },
+            headerTintColor: theme.colors.text.primary,
+            headerTitleStyle: {
+              fontFamily: theme.typography.fontFamily.semibold,
+            },
+            contentStyle: {
+              backgroundColor: theme.colors.background,
+            },
+          }}
+        >
+          <Stack.Screen name="+not-found" />
+          <Stack.Screen name="index" options={{ title: 'DeliverEase' }} />
+          <Stack.Screen name="login" options={{ title: 'Login' }} />
+          <Stack.Screen name="register" options={{ title: 'Register' }} />
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        </Stack>
       )}
     </>
   );

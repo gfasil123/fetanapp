@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity } from 'react-native';
 import Input from '../../components/Input';
 import Button from '../../components/Button';
-import { Mail, Lock, User, Phone, ArrowLeft, UserPlus } from 'lucide-react-native';
+import { Mail, Lock, User, Phone, ArrowLeft, UserPlus, Car, Package } from 'lucide-react-native';
 import { theme } from '../theme';
 import { useAuth } from '../context/AuthContext';
 
@@ -13,6 +13,7 @@ export default function RegisterScreen({ navigation }) {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [role, setRole] = useState('customer'); // Default to customer
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -37,10 +38,10 @@ export default function RegisterScreen({ navigation }) {
     setError(null);
 
     try {
-      console.log('Register attempt with:', email);
+      console.log('Register attempt with:', email, 'as role:', role);
       
-      // Use real Firebase authentication
-      const result = await auth.signUp(email, password, name, 'customer');
+      // Use real Firebase authentication with selected role
+      const result = await auth.signUp(email, password, name, role);
       
       if (result.success) {
         // Registration successful, update the user's phone number in their profile
@@ -146,6 +147,73 @@ export default function RegisterScreen({ navigation }) {
               leftIcon={<Lock size={20} color={theme.colors.text.secondary} />}
             />
 
+            <Text style={styles.roleLabel}>Select Role</Text>
+            <View style={styles.roleSelectionContainer}>
+              <TouchableOpacity 
+                style={[
+                  styles.roleOption, 
+                  role === 'customer' && styles.roleOptionSelected
+                ]}
+                onPress={() => setRole('customer')}
+                activeOpacity={0.8}
+              >
+                <View style={[
+                  styles.roleIconContainer,
+                  role === 'customer' && styles.roleIconContainerSelected
+                ]}>
+                  <Package 
+                    size={24} 
+                    color={role === 'customer' ? '#FFFFFF' : theme.colors.text.secondary} 
+                  />
+                </View>
+                <Text style={[
+                  styles.roleText,
+                  role === 'customer' && styles.roleTextSelected
+                ]}>
+                  Customer
+                </Text>
+                <Text style={styles.roleDescription}>
+                  Send packages and track deliveries
+                </Text>
+                {role === 'customer' && (
+                  <View style={styles.selectedIndicator} />
+                )}
+              </TouchableOpacity>
+
+              <View style={styles.roleDivider} />
+
+              <TouchableOpacity 
+                style={[
+                  styles.roleOption, 
+                  role === 'driver' && styles.roleOptionSelected
+                ]}
+                onPress={() => setRole('driver')}
+                activeOpacity={0.8}
+              >
+                <View style={[
+                  styles.roleIconContainer,
+                  role === 'driver' && styles.roleIconContainerSelected
+                ]}>
+                  <Car 
+                    size={24} 
+                    color={role === 'driver' ? '#FFFFFF' : theme.colors.text.secondary} 
+                  />
+                </View>
+                <Text style={[
+                  styles.roleText,
+                  role === 'driver' && styles.roleTextSelected
+                ]}>
+                  Driver
+                </Text>
+                <Text style={styles.roleDescription}>
+                  Deliver packages and earn money
+                </Text>
+                {role === 'driver' && (
+                  <View style={styles.selectedIndicator} />
+                )}
+              </TouchableOpacity>
+            </View>
+
             <Button
               title="Create Account"
               onPress={handleRegister}
@@ -234,7 +302,7 @@ const styles = StyleSheet.create({
   button: {
     marginTop: theme.spacing.lg,
     height: 56,
-    backgroundColor: theme.colors.navbar.background,
+    backgroundColor: undefined,
   },
   footer: {
     flexDirection: 'row',
@@ -261,5 +329,112 @@ const styles = StyleSheet.create({
     color: theme.colors.danger,
     textAlign: 'center',
     fontFamily: theme.typography.fontFamily.medium,
+  },
+  roleLabel: {
+    fontSize: 16,
+    fontFamily: theme.typography.fontFamily.semibold,
+    color: theme.colors.text.primary,
+    marginTop: theme.spacing.xl,
+    marginBottom: theme.spacing.md,
+  },
+  roleSelectionContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: theme.spacing.xl,
+    backgroundColor: theme.colors.backgroundAlt,
+    borderRadius: theme.borderRadius.lg,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
+  },
+  roleOption: {
+    flex: 1,
+    padding: theme.spacing.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  roleOptionSelected: {
+    backgroundColor: 'rgba(157, 118, 232, 0.08)',
+  },
+  roleIconContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: theme.colors.backgroundAlt,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: theme.spacing.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  roleIconContainerSelected: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+    ...Platform.select({
+      ios: {
+        shadowColor: theme.colors.primary,
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.3,
+        shadowRadius: 5,
+      },
+      android: {
+        elevation: 5,
+      },
+    }),
+  },
+  roleText: {
+    fontSize: 18,
+    fontFamily: theme.typography.fontFamily.medium,
+    color: theme.colors.text.primary,
+    marginBottom: theme.spacing.sm,
+  },
+  roleTextSelected: {
+    fontFamily: theme.typography.fontFamily.bold,
+    color: theme.colors.primary,
+  },
+  roleDescription: {
+    fontSize: 14,
+    fontFamily: theme.typography.fontFamily.regular,
+    color: theme.colors.text.secondary,
+    textAlign: 'center',
+    paddingHorizontal: theme.spacing.sm,
+  },
+  selectedIndicator: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: theme.colors.primary,
+    position: 'absolute',
+    right: 12,
+    top: 12,
+    borderWidth: 2,
+    borderColor: 'white',
+  },
+  roleDivider: {
+    width: 1,
+    backgroundColor: theme.colors.border,
+    alignSelf: 'stretch',
+    marginVertical: theme.spacing.md,
   },
 }); 

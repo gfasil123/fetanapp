@@ -39,12 +39,23 @@ export function useOrders(userId: string | null, role: string | null) {
         unsubscribeRef.current = null;
       }
 
-      // Only customer orders are supported now
-      const ordersQuery = query(
-        collection(db, 'orders'),
-        where('customerId', '==', userId),
-        orderBy('createdAt', 'desc')
-      );
+      let ordersQuery;
+
+      // For drivers, show all orders
+      if (role === 'driver') {
+        // For drivers, show all orders
+        ordersQuery = query(
+          collection(db, 'orders'),
+          orderBy('createdAt', 'desc')
+        );
+      } else {
+        // For customers, only show their orders
+        ordersQuery = query(
+          collection(db, 'orders'),
+          where('customerId', '==', userId),
+          orderBy('createdAt', 'desc')
+        );
+      }
 
       // Add error handling wrapper for onSnapshot
       const unsubscribe = onSnapshot(
@@ -67,8 +78,9 @@ export function useOrders(userId: string | null, role: string | null) {
               distance: data.distance,
               status: data.status as DeliveryStatus,
               createdAt: data.createdAt?.toDate() || new Date(),
-              deliveredAt: data.deliveredAt ? data.deliveredAt.toDate() : undefined,
-              notes: data.notes
+              deliveredAt: data.deliveredAt && typeof data.deliveredAt.toDate === 'function' ? data.deliveredAt.toDate() : undefined,
+              notes: data.notes,
+              driverId: data.driverId,
             };
             
             ordersList.push(order);
@@ -98,7 +110,7 @@ export function useOrders(userId: string | null, role: string | null) {
       setLoading(false);
     }
   // Remove unsubscribeFn from dependency array to avoid infinite loop
-  }, [userId]);
+  }, [userId, role]);
 
   useEffect(() => {
     fetchOrders();

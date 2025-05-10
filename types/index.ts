@@ -38,6 +38,7 @@ export type DeliveryType = 'standard' | 'express' | 'same_day';
 export interface Order {
   id: string;
   customerId: string;
+  driverId?: string;
   pickupAddress: {
     address: string;
     latitude: number;
