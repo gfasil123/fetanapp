@@ -1,7 +1,7 @@
 // Import the polyfill for crypto.getRandomValues()
 import 'react-native-get-random-values';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet, Alert } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';

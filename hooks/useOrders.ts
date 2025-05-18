@@ -43,7 +43,9 @@ export function useOrders(userId: string | null, role: string | null) {
 
       // For drivers, show all orders
       if (role === 'driver') {
-        // For drivers, show all orders
+        // For drivers, show relevant orders:
+        // 1. Any orders assigned to this driver (regardless of status)
+        // 2. Pending orders that could be picked up
         ordersQuery = query(
           collection(db, 'orders'),
           orderBy('createdAt', 'desc')

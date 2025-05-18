@@ -134,7 +134,7 @@ export const AuthProvider = ({ children }) => {
   };
   
   // Sign up function
-  const signUp = async (email, password, name, role = 'customer') => {
+  const signUp = async (email, password, name, phone, role = 'customer') => {
     setLoading(true);
     setError(null);
     
@@ -145,14 +145,30 @@ export const AuthProvider = ({ children }) => {
       // Update profile with name
       await updateProfile(userCredential.user, { displayName: name });
       
-      // Create user document in Firestore
-      const userData = {
+      // Create base user data
+      const baseUserData = {
         email,
         name,
+        phone,
         role,
         createdAt: new Date(),
         favoriteDrivers: []
       };
+      
+      // Add driver-specific fields if the role is 'driver'
+      let userData;
+      if (role === 'driver') {
+        userData = {
+          ...baseUserData,
+          status: 'pending',
+          isOnline: false,
+          rating: 0,
+          deliveryCount: 0,
+          joinDate: new Date()
+        };
+      } else {
+        userData = baseUserData;
+      }
       
       await setDoc(doc(db, 'users', userCredential.user.uid), userData);
       

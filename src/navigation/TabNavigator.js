@@ -12,8 +12,11 @@ import {
 import HomeTabScreen from '../screens/HomeTabScreen';
 import DriverHomeScreen from '../screens/DriverHomeScreen';
 import OrdersTabScreen from '../screens/OrdersTabScreen';
+import DriverOrdersScreen from '../screens/DriverOrdersScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import DriverProfileScreen from '../screens/DriverProfileScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import DriverSettingsScreen from '../screens/DriverSettingsScreen';
 import { useAuth } from '../context/AuthContext';
 
 const Tab = createBottomTabNavigator();
@@ -105,7 +108,7 @@ export default function TabNavigator() {
       />
       <Tab.Screen
         name="Orders"
-        component={OrdersTabScreen}
+        component={isDriver ? DriverOrdersScreen : OrdersTabScreen}
         options={{
           tabBarIcon: ({ color, focused }) => (
             <View style={getIconStyle(focused)}>
@@ -116,7 +119,7 @@ export default function TabNavigator() {
       />
       <Tab.Screen
         name="Profile"
-        component={ProfileScreen}
+        component={isDriver ? DriverProfileScreen : ProfileScreen}
         options={{
           tabBarIcon: ({ color, focused }) => (
             <View style={getIconStyle(focused)}>
@@ -127,7 +130,7 @@ export default function TabNavigator() {
       />
       <Tab.Screen
         name="Settings"
-        component={SettingsScreen}
+        component={isDriver ? DriverSettingsScreen : SettingsScreen}
         options={{
           tabBarIcon: ({ color, focused }) => (
             <View style={getIconStyle(focused)}>

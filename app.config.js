@@ -28,6 +28,8 @@ export default {
   web: {
     favicon: "./assets/favicon.png"
   },
+  // Enable the new architecture
+  newArchEnabled: true,
   // This is where you provide environment variables to your app
   extra: {
     // Firebase configuration
@@ -39,7 +41,7 @@ export default {
     FIREBASE_APP_ID: process.env.FIREBASE_APP_ID,
     
     // Google Places API
-    GOOGLE_PLACES_API_KEY: process.env.GOOGLE_PLACES_API_KEY,
+    GOOGLE_PLACES_API_KEY: process.env.GOOGLE_PLACES_API_KEY
   },
   plugins: [
     '@react-native-firebase/app',

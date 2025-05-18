@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { useOrders } from '../../hooks/useOrders';
+import { useDriverEarnings } from '../../hooks/useDriverEarnings';
 import { 
   Clock,
   MapPin,
@@ -32,12 +33,14 @@ import {
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../theme';
-import { collection, doc, updateDoc, getDoc } from 'firebase/firestore';
+import { collection, doc, updateDoc, getDoc, increment, GeoPoint } from 'firebase/firestore';
 import { db } from '../../firebase/config';
+import * as Location from 'expo-location';
 
 const { width } = Dimensions.get('window');
 const STATUS_COLORS = {
   pending: '#9D76E8',     // Purple
+  assigned: '#9D76E8',    // Purple (same as pending)
   accepted: '#FF9500',    // Orange
   in_transit: '#FF9500',  // Orange
   picked_up: '#3498db',   // Blue
@@ -45,54 +48,131 @@ const STATUS_COLORS = {
   cancelled: '#e74c3c',   // Red
 };
 
+// Add any missing colors to theme if needed
+const extendedTheme = {
+  ...theme,
+  colors: {
+    ...theme.colors,
+    disabled: '#BBBBBB',  // Grey for disabled buttons
+    warning: '#FF9500',   // Orange for warning text
+  }
+};
+
 export default function DriverHomeScreen({ navigation }) {
   const { user } = useAuth();
   const { orders, loading, error, fetchOrders } = useOrders(user?.id || null, user?.role || null);
+  const earnings = useDriverEarnings(orders, user?.id);
   const [isOnline, setIsOnline] = useState(false);
+  const [isBusy, setIsBusy] = useState(false);
   const [currentOrders, setCurrentOrders] = useState([]);
-  const [pastOrders, setPastOrders] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [showDeliveryRequestModal, setShowDeliveryRequestModal] = useState(false);
   const [currentRequest, setCurrentRequest] = useState(null);
   const [requestTimeLeft, setRequestTimeLeft] = useState(20);
   const [updatingOrderStatus, setUpdatingOrderStatus] = useState(false);
   const [incomingRequests, setIncomingRequests] = useState([]);
+  const [locationPermissionGranted, setLocationPermissionGranted] = useState(false);
+  const [locationUpdateInterval, setLocationUpdateInterval] = useState(null);
+  const [orderTimers, setOrderTimers] = useState({});
+  const [countdowns, setCountdowns] = useState({});
+  const [snackbarVisible, setSnackbarVisible] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
+
+  // Request location permissions when component mounts
+  useEffect(() => {
+    const requestLocationPermission = async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        setLocationPermissionGranted(status === 'granted');
+        if (status !== 'granted') {
+          Alert.alert(
+            'Location Permission',
+            'This app needs access to your location to update your coordinates when you are online.',
+            [{ text: 'OK' }]
+          );
+        }
+      } catch (error) {
+        console.error('Error requesting location permission:', error);
+      }
+    };
+    
+    requestLocationPermission();
+  }, []);
+
+  // Get current location coordinates
+  const getCurrentLocation = async () => {
+    if (!locationPermissionGranted) {
+      console.log('Location permission not granted');
+      return null;
+    }
+    
+    try {
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High
+      });
+      return location;
+    } catch (error) {
+      console.error('Error getting location:', error);
+      return null;
+    }
+  };
+
+  // Update driver's location in Firestore
+  const updateDriverLocation = async () => {
+    if (!user?.id || !locationPermissionGranted) return;
+    
+    try {
+      const location = await getCurrentLocation();
+      if (!location) return;
+      
+      const { latitude, longitude } = location.coords;
+      
+      // Create a GeoPoint for Firestore
+      const geoPoint = new GeoPoint(latitude, longitude);
+      
+      const userDocRef = doc(db, 'users', user.id);
+      await updateDoc(userDocRef, {
+        currentLocation: geoPoint, // Store only as GeoPoint
+        lastLocationUpdate: new Date()
+      });
+      
+      console.log(`Driver location updated to: GeoPoint(${latitude}, ${longitude})`);
+    } catch (error) {
+      console.error('Error updating driver location:', error);
+    }
+  };
 
   // Pull to refresh handler
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
       if (fetchOrders) await fetchOrders();
-      await updateDriverStatus(isOnline);
+      await updateDriverStatus(isOnline, isBusy);
     } catch (error) {
       console.error('Error refreshing data:', error);
     } finally {
       setRefreshing(false);
     }
-  }, [fetchOrders, isOnline]);
+  }, [fetchOrders, isOnline, isBusy]);
 
-  // Filter orders into current and past
+  // Filter orders into current and incoming
   useEffect(() => {
     if (orders) {
-      // Show all pending orders in incoming requests section
+      // Only show pending or assigned orders that are assigned to this driver
       const incoming = orders.filter(order => 
-        order.status === 'pending'
+        (order.status === 'pending' || order.status === 'assigned') && 
+        order.driverId === user?.id
       );
       setIncomingRequests(incoming);
       
-      // Current orders: accepted, picked_up, in_transit
+      // Current orders: accepted, picked_up, in_transit that belong to this driver
       const current = orders.filter(order => 
-        ['accepted', 'picked_up', 'in_transit'].includes(order.status)
+        ['accepted', 'picked_up', 'in_transit'].includes(order.status) && 
+        order.driverId === user?.id
       );
       setCurrentOrders(current);
-
-      // Past orders: delivered, cancelled
-      const past = orders.filter(order => 
-        ['delivered', 'cancelled'].includes(order.status)
-      );
-      setPastOrders(past);
     }
-  }, [orders]);
+  }, [orders, user?.id]);
 
   // Simulated delivery request 
   // Note: In a real app, this would come from a Firebase Cloud Function or similar
@@ -120,13 +200,16 @@ export default function DriverHomeScreen({ navigation }) {
         },
         price: 15.50,
         distance: 3.2,
+        // This request is assigned to this driver
+        driverId: user?.id,
+        status: 'pending'
       };
       
       setCurrentRequest(simulatedRequest);
       setShowDeliveryRequestModal(true);
       setRequestTimeLeft(20);
     }
-  }, [isOnline, showDeliveryRequestModal]);
+  }, [isOnline, showDeliveryRequestModal, user?.id]);
 
   // Countdown timer for delivery request
   useEffect(() => {
@@ -146,8 +229,40 @@ export default function DriverHomeScreen({ navigation }) {
     return () => clearInterval(interval);
   }, [showDeliveryRequestModal, requestTimeLeft]);
 
+  // Load initial driver status
+  useEffect(() => {
+    const loadDriverStatus = async () => {
+      if (!user?.id) return;
+      try {
+        const userDocRef = doc(db, 'users', user.id);
+        const userDoc = await getDoc(userDocRef);
+        
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          setIsOnline(userData.isOnline || false);
+          setIsBusy(userData.status === 'Busy');
+        }
+      } catch (error) {
+        console.error('Error loading driver status:', error);
+      }
+    };
+    
+    loadDriverStatus();
+  }, [user?.id]);
+
+  // Add a focus listener to refresh orders when the screen comes into focus
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      // Refresh orders when screen is focused
+      fetchOrders();
+    });
+    
+    // Clean up the listener
+    return unsubscribe;
+  }, [navigation, fetchOrders]);
+
   // Update driver's online status in Firestore
-  const updateDriverStatus = async (status) => {
+  const updateDriverStatus = async (status, busy = false) => {
     if (!user?.id) return;
     
     try {
@@ -155,11 +270,19 @@ export default function DriverHomeScreen({ navigation }) {
       const userDoc = await getDoc(userDocRef);
       
       if (userDoc.exists()) {
-        await updateDoc(userDocRef, {
+        const updateData = {
           isOnline: status,
           lastStatusUpdate: new Date()
-        });
-        console.log(`Driver status updated to: ${status ? 'Online' : 'Offline'}`);
+        };
+        
+        // If busy flag is provided, update the driver's status accordingly
+        if (busy !== undefined) {
+          updateData.status = busy ? 'Busy' : 'Available';
+          setIsBusy(busy); // Update the local state
+        }
+        
+        await updateDoc(userDocRef, updateData);
+        console.log(`Driver status updated to: ${status ? 'Online' : 'Offline'}, Status: ${busy ? 'Busy' : 'Available'}`);
       }
     } catch (error) {
       console.error('Error updating driver status:', error);
@@ -170,11 +293,35 @@ export default function DriverHomeScreen({ navigation }) {
   // Toggle driver's online status
   const toggleOnlineStatus = async (value) => {
     setIsOnline(value);
-    await updateDriverStatus(value);
+    // When turning offline, also set not busy
+    // When turning online, maintain previous busy state (most likely not busy)
+    if (!value) {
+      setIsBusy(false);
+      await updateDriverStatus(false, false);
+    } else {
+      // When coming online, update location first
+      await updateDriverLocation();
+      await updateDriverStatus(true, false); // When toggling to online, set as Available
+    }
   };
 
   // Handle delivery request acceptance
   const handleAcceptRequest = () => {
+    // Check if driver already has active orders
+    const hasActiveOrders = currentOrders.some(order => 
+      ['accepted', 'picked_up', 'in_transit'].includes(order.status)
+    );
+    
+    if (hasActiveOrders) {
+      Alert.alert(
+        'Active Delivery',
+        'You cannot accept new orders while you have an active delivery in progress.',
+        [{ text: 'OK' }]
+      );
+      setShowDeliveryRequestModal(false);
+      return;
+    }
+    
     setShowDeliveryRequestModal(false);
     Alert.alert('Order Accepted', 'You have accepted the delivery request.');
     // In a real app, you would update Firestore here
@@ -186,16 +333,80 @@ export default function DriverHomeScreen({ navigation }) {
     // In a real app, you would update Firestore here
   };
 
+  // Accept an order
+  const acceptOrder = async (orderId) => {
+    // Clear timer for this order to prevent auto-unassign
+    clearOrderTimer(orderId);
+    
+    setUpdatingOrderStatus(true);
+    try {
+      // Check if driver already has active orders
+      const activeOrders = currentOrders.filter(order => 
+        ['accepted', 'picked_up', 'in_transit'].includes(order.status)
+      );
+      
+      if (activeOrders.length > 0) {
+        Alert.alert(
+          'Active Delivery',
+          'You cannot accept new orders while you have an active delivery in progress.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+      
+      // Update location before accepting the order
+      await updateDriverLocation();
+      
+      const orderRef = doc(db, 'orders', orderId);
+      await updateDoc(orderRef, {
+        status: 'accepted',
+        driverId: user.id,
+        acceptedAt: new Date()
+      });
+      
+      // Set driver status to busy when accepting an order
+      await updateDriverStatus(true, true);
+      
+      // Refresh orders list
+      if (fetchOrders) await fetchOrders();
+      
+      Alert.alert('Order Accepted', 'You have accepted this delivery request.');
+    } catch (error) {
+      console.error('Error accepting order:', error);
+      Alert.alert('Error', 'Failed to accept order.');
+    } finally {
+      setUpdatingOrderStatus(false);
+    }
+  };
+
   // Update order status (pickup/delivery confirmation)
   const updateOrderStatus = async (orderId, newStatus) => {
     setUpdatingOrderStatus(true);
     try {
+      // Update driver location when status changes
+      await updateDriverLocation();
+      
       const orderRef = doc(db, 'orders', orderId);
       await updateDoc(orderRef, {
         status: newStatus,
         ...(newStatus === 'picked_up' ? { pickedUpAt: new Date() } : {}),
         ...(newStatus === 'delivered' ? { deliveredAt: new Date() } : {})
       });
+      
+      // Update driver status based on order status
+      if (newStatus === 'picked_up') {
+        // Set driver status to busy when picking up an order
+        await updateDriverStatus(true, true);
+      } else if (newStatus === 'delivered') {
+        // Set driver status back to available when delivery is complete
+        // Also update the lastDeliveryAt timestamp on the driver record
+        const userDocRef = doc(db, 'users', user.id);
+        await updateDoc(userDocRef, {
+          lastDeliveryAt: new Date(),
+          deliveryCount: increment(1)
+        });
+        await updateDriverStatus(true, false);
+      }
       
       // Refresh orders list
       if (fetchOrders) await fetchOrders();
@@ -212,38 +423,21 @@ export default function DriverHomeScreen({ navigation }) {
     }
   };
 
-  // Accept an order
-  const acceptOrder = async (orderId) => {
-    setUpdatingOrderStatus(true);
-    try {
-      const orderRef = doc(db, 'orders', orderId);
-      await updateDoc(orderRef, {
-        status: 'accepted',
-        driverId: user.id,
-        acceptedAt: new Date()
-      });
-      
-      // Refresh orders list
-      if (fetchOrders) await fetchOrders();
-      
-      Alert.alert('Order Accepted', 'You have accepted this delivery request.');
-    } catch (error) {
-      console.error('Error accepting order:', error);
-      Alert.alert('Error', 'Failed to accept order.');
-    } finally {
-      setUpdatingOrderStatus(false);
-    }
-  };
-
   // Update order to in_transit status
   const updateToInTransit = async (orderId) => {
     setUpdatingOrderStatus(true);
     try {
+      // Update driver location when starting transit
+      await updateDriverLocation();
+      
       const orderRef = doc(db, 'orders', orderId);
       await updateDoc(orderRef, {
         status: 'in_transit',
         inTransitAt: new Date()
       });
+      
+      // Ensure driver status remains busy during transit
+      await updateDriverStatus(true, true);
       
       // Refresh orders list
       if (fetchOrders) await fetchOrders();
@@ -257,45 +451,252 @@ export default function DriverHomeScreen({ navigation }) {
     }
   };
 
+  // Show snackbar notification
+  const showSnackbar = (message, showNotification = false) => {
+    setSnackbarMessage(message);
+    setSnackbarVisible(true);
+    
+    // Just log the message that would have been a notification
+    if (showNotification) {
+      console.log('NOTIFICATION WOULD HAVE BEEN SENT:', message);
+    }
+    
+    // Hide after 3 seconds
+    setTimeout(() => {
+      setSnackbarVisible(false);
+    }, 3000);
+  };
+
   // Add this new function to handle rejecting an order
   const rejectOrder = async (orderId) => {
+    // Clear timer for this order
+    clearOrderTimer(orderId);
+    
     setUpdatingOrderStatus(true);
     try {
       const orderRef = doc(db, 'orders', orderId);
       await updateDoc(orderRef, {
-        status: 'cancelled',
-        cancelledAt: new Date(),
-        cancelledBy: 'driver',
-        cancelledById: user.id
+        status: 'pending',
+        driverId: null,
+        unassignedAt: new Date(),
+        unassignedBy: user.id
       });
+      
+      // Set driver status back to available when rejecting an order
+      await updateDriverStatus(true, false);
       
       // Refresh orders list
       if (fetchOrders) await fetchOrders();
       
-      Alert.alert('Order Rejected', 'You have rejected this delivery request.');
+      // Show snackbar instead of alert
+      showSnackbar('Order unassigned and returned to the pool', true);
     } catch (error) {
-      console.error('Error rejecting order:', error);
-      Alert.alert('Error', 'Failed to reject order.');
+      console.error('Error unassigning order:', error);
+      showSnackbar('Failed to unassign order', true);
     } finally {
       setUpdatingOrderStatus(false);
     }
   };
 
+  // Set up periodic location updates when driver is online
+  useEffect(() => {
+    // Clear any existing interval
+    if (locationUpdateInterval) {
+      clearInterval(locationUpdateInterval);
+      setLocationUpdateInterval(null);
+    }
+    
+    // If driver is online, set up periodic location updates
+    if (isOnline && locationPermissionGranted) {
+      // Update location every 5 minutes (300000 ms)
+      // In a production app, you might want to use a more sophisticated solution
+      // like background location tracking or geofencing
+      const interval = setInterval(() => {
+        updateDriverLocation();
+      }, 300000); // 5 minutes
+      
+      setLocationUpdateInterval(interval);
+      
+      // Initial location update when coming online
+      updateDriverLocation();
+      
+      return () => {
+        clearInterval(interval);
+      };
+    }
+  }, [isOnline, locationPermissionGranted]);
+
+  // Clean up interval on component unmount
+  useEffect(() => {
+    return () => {
+      if (locationUpdateInterval) {
+        clearInterval(locationUpdateInterval);
+      }
+    };
+  }, [locationUpdateInterval]);
+
+  // Setup countdown timers for pending assigned orders
+  useEffect(() => {
+    // Only set up timers for orders that are pending and assigned to this driver
+    if (incomingRequests.length > 0 && user?.id) {
+      const newTimers = {};
+      
+      // Clear any existing timers
+      Object.values(orderTimers).forEach(timer => {
+        if (timer) clearTimeout(timer);
+      });
+      
+      // Set up new timers for each incoming request
+      incomingRequests.forEach(order => {
+        if (order.status === 'pending' && order.driverId === user.id && !orderTimers[order.id]) {
+          console.log(`Setting up 30-second timer for order ${order.id}`);
+          
+          // Create a timeout that will auto-unassign after 30 seconds
+          const timerId = setTimeout(() => {
+            console.log(`Timer expired for order ${order.id}, auto-unassigning`);
+            rejectOrder(order.id);
+          }, 30000); // 30 seconds
+          
+          newTimers[order.id] = timerId;
+        }
+      });
+      
+      // Update state with new timers
+      if (Object.keys(newTimers).length > 0) {
+        setOrderTimers(prev => ({ ...prev, ...newTimers }));
+      }
+    }
+    
+    // Cleanup function to clear all timers when component unmounts
+    return () => {
+      Object.values(orderTimers).forEach(timer => {
+        if (timer) clearTimeout(timer);
+      });
+    };
+  }, [incomingRequests, user?.id]);
+  
+  // Update countdowns every second
+  useEffect(() => {
+    console.log("Checking for orders to set up countdowns", incomingRequests.length);
+    
+    // Only setup interval if there are pending assigned orders
+    if (incomingRequests.length > 0) {
+      // Initialize countdowns for new orders
+      const newCountdowns = {};
+      incomingRequests.forEach(order => {
+        // Initialize countdown for any pending or assigned order assigned to this driver
+        if ((order.status === 'pending' || order.status === 'assigned') && 
+            order.driverId === user?.id && 
+            !countdowns[order.id]) {
+          console.log(`Setting up countdown for order ${order.id}`);
+          newCountdowns[order.id] = 30; // Start with 30 seconds
+        }
+      });
+
+      // Update countdowns state with any new orders
+      if (Object.keys(newCountdowns).length > 0) {
+        console.log("New countdowns being set up:", newCountdowns);
+        setCountdowns(prev => ({ ...prev, ...newCountdowns }));
+      }
+      
+      // Set up interval to update all countdowns every second
+      const interval = setInterval(() => {
+        setCountdowns(prev => {
+          const updated = { ...prev };
+          let needUpdate = false;
+          
+          // Decrement each countdown and unassign if it reaches zero
+          Object.keys(updated).forEach(orderId => {
+            if (updated[orderId] > 0) {
+              updated[orderId] -= 1;
+              needUpdate = true;
+              console.log(`Countdown for ${orderId}: ${updated[orderId]}s`);
+              
+              // If countdown reached zero, unassign the order automatically
+              if (updated[orderId] === 0) {
+                console.log(`Countdown reached zero for order ${orderId}, auto-unassigning`);
+                // Use setTimeout to avoid state update during render
+                setTimeout(() => {
+                  rejectOrder(orderId);
+                  // Remove this order from countdowns
+                  setCountdowns(current => {
+                    const newCountdowns = { ...current };
+                    delete newCountdowns[orderId];
+                    return newCountdowns;
+                  });
+                }, 0);
+              }
+            }
+          });
+          
+          // Only trigger a state update if something changed
+          return needUpdate ? updated : prev;
+        });
+      }, 1000);
+      
+      // Clean up interval
+      return () => clearInterval(interval);
+    }
+  }, [incomingRequests, user?.id]);
+
+  // Clear timer when an order is accepted or rejected
+  const clearOrderTimer = (orderId) => {
+    if (orderTimers[orderId]) {
+      clearTimeout(orderTimers[orderId]);
+      setOrderTimers(prev => {
+        const newTimers = { ...prev };
+        delete newTimers[orderId];
+        return newTimers;
+      });
+    }
+    
+    // Also clear from countdowns state
+    setCountdowns(prev => {
+      const newCountdowns = { ...prev };
+      delete newCountdowns[orderId];
+      return newCountdowns;
+    });
+  };
+
   // Render order card based on status
   const renderOrderCard = (order, isPast = false, isIncoming = false) => {
-    const statusColor = STATUS_COLORS[order.status] || theme.colors.primary;
+    const statusColor = STATUS_COLORS[order.status] || extendedTheme.colors.primary;
+    
+    // Check if driver has any active orders
+    const hasActiveOrders = currentOrders.some(order => 
+      ['accepted', 'picked_up', 'in_transit'].includes(order.status)
+    );
+
+    // Check if this order is directly assigned to this driver
+    const isAssignedToMe = order.driverId === user?.id;
+    
+    // Get countdown for this order if it exists
+    const countdown = countdowns[order.id] || 0;
+    const showCountdown = isAssignedToMe && 
+      (order.status === 'pending' || order.status === 'assigned') && 
+      countdown > 0;
+    
+    console.log(`Order ${order.id} - showCountdown: ${showCountdown}, countdown: ${countdown}`);
     
     return (
       <TouchableOpacity 
         key={order.id}
-        style={styles.orderCard}
+        style={[
+          styles.orderCard,
+          isAssignedToMe && styles.assignedOrderCard
+        ]}
         onPress={() => navigation.navigate('OrderDetails', { orderId: order.id })}
         activeOpacity={0.9}
       >
         <View style={styles.orderHeaderRow}>
           <View style={styles.orderIdContainer}>
-            <Package size={16} color={theme.colors.text.primary} />
+            <Package size={16} color={extendedTheme.colors.text.primary} />
             <Text style={styles.orderId}>#{order.id.slice(0, 8)}</Text>
+            {isAssignedToMe && (
+              <View style={styles.assignedBadge}>
+                <Text style={styles.assignedText}>Assigned</Text>
+              </View>
+            )}
           </View>
           <View style={[styles.statusBadge, { backgroundColor: statusColor }]}>
             <Text style={styles.statusText}>
@@ -303,6 +704,22 @@ export default function DriverHomeScreen({ navigation }) {
             </Text>
           </View>
         </View>
+        
+        {/* Display countdown prominently at the top of the card */}
+        {showCountdown && countdown > 0 && (
+          <View style={[
+            styles.countdownContainer, 
+            countdown <= 10 ? styles.countdownUrgentContainer : null
+          ]}>
+            <Clock size={16} color={countdown <= 10 ? '#e74c3c' : '#FF9500'} />
+            <Text style={[
+              styles.countdownText, 
+              countdown <= 10 ? styles.countdownUrgentText : null
+            ]}>
+              Respond within: {countdown} seconds
+            </Text>
+          </View>
+        )}
         
         {/* Order Progress Indicator */}
         {!isPast && !isIncoming && (
@@ -450,14 +867,25 @@ export default function DriverHomeScreen({ navigation }) {
               </TouchableOpacity>
               
               <TouchableOpacity 
-                style={[styles.actionButton, styles.acceptButton]}
+                style={[
+                  styles.actionButton, 
+                  styles.acceptButton,
+                  hasActiveOrders && styles.disabledButton
+                ]}
                 onPress={() => acceptOrder(order.id)}
-                disabled={updatingOrderStatus}
+                disabled={updatingOrderStatus || hasActiveOrders}
               >
                 <CheckCircle size={16} color="#FFFFFF" />
-                <Text style={styles.actionButtonText}>Accept</Text>
+                <Text style={styles.actionButtonText}>
+                  {hasActiveOrders ? 'Unavailable' : 'Accept'}
+                </Text>
               </TouchableOpacity>
             </View>
+            {hasActiveOrders && (
+              <Text style={styles.warningText}>
+                Complete your current delivery before accepting new orders
+              </Text>
+            )}
           </View>
         ) : !isPast && (
           <View style={styles.actionButtonsContainer}>
@@ -530,9 +958,13 @@ export default function DriverHomeScreen({ navigation }) {
       {/* Availability Toggle Card */}
       <View style={styles.toggleCard}>
         <LinearGradient
-          colors={isOnline ? 
-            ['#50C878', '#3F9E5A'] : 
-            ['#e74c3c', '#c0392b']}
+          colors={!isOnline ? 
+            ['#e74c3c', '#c0392b'] : // Offline
+            (isBusy ? 
+              ['#FF9500', '#F58700'] : // Busy (orange)
+              ['#50C878', '#3F9E5A']   // Available (green)
+            )
+          }
           start={{x: 0, y: 0}}
           end={{x: 1, y: 0}}
           style={styles.toggleGradient}
@@ -540,12 +972,16 @@ export default function DriverHomeScreen({ navigation }) {
           <View style={styles.toggleContent}>
             <View>
               <Text style={styles.toggleLabel}>
-                {isOnline ? 'You are Online' : 'You are Offline'}
+                {!isOnline ? 'You are Offline' : 
+                  (isBusy ? 'You are Busy' : 'You are Online')}
               </Text>
               <Text style={styles.toggleDescription}>
-                {isOnline 
-                  ? 'You are available to receive delivery requests' 
-                  : 'Switch online to start receiving delivery requests'}
+                {!isOnline 
+                  ? 'Switch online to start receiving delivery requests' 
+                  : (isBusy 
+                      ? 'Currently handling an order' 
+                      : 'You are available to receive delivery requests')
+                }
               </Text>
             </View>
             <Switch
@@ -554,6 +990,7 @@ export default function DriverHomeScreen({ navigation }) {
               trackColor={{ false: 'rgba(255, 255, 255, 0.3)', true: 'rgba(255, 255, 255, 0.3)' }}
               thumbColor={isOnline ? '#FFFFFF' : '#FFFFFF'}
               ios_backgroundColor="rgba(255, 255, 255, 0.3)"
+              disabled={isBusy} // Disable toggle when busy
             />
           </View>
         </LinearGradient>
@@ -562,27 +999,27 @@ export default function DriverHomeScreen({ navigation }) {
       {/* Incoming Requests Section */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Incoming Requests ({incomingRequests.length})</Text>
+          <Text style={styles.sectionTitle}>Orders Assigned to Me ({incomingRequests.length})</Text>
         </View>
         
         {loading ? (
           <View style={styles.centered}>
-            <ActivityIndicator size="large" color={theme.colors.primary} />
-            <Text style={styles.loadingText}>Loading requests...</Text>
+            <ActivityIndicator size="large" color={extendedTheme.colors.primary} />
+            <Text style={styles.loadingText}>Loading assigned orders...</Text>
           </View>
         ) : error ? (
           <View style={styles.centered}>
-            <Info size={24} color={theme.colors.danger} />
-            <Text style={styles.errorText}>Error loading requests</Text>
+            <Info size={24} color={extendedTheme.colors.danger} />
+            <Text style={styles.errorText}>Error loading assigned orders</Text>
           </View>
         ) : incomingRequests.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <Bell size={32} color={theme.colors.text.secondary} />
-            <Text style={styles.emptyText}>No incoming requests</Text>
+            <Bell size={32} color={extendedTheme.colors.text.secondary} />
+            <Text style={styles.emptyText}>No orders assigned to you</Text>
             <Text style={styles.emptySubtext}>
               {isOnline 
-                ? 'New delivery requests will appear here' 
-                : 'Go online to accept delivery requests'}
+                ? 'You will be notified when you are assigned new orders' 
+                : 'Go online to receive order assignments'}
             </Text>
           </View>
         ) : (
@@ -628,34 +1065,6 @@ export default function DriverHomeScreen({ navigation }) {
         )}
       </View>
       
-      {/* Past Orders Section */}
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Past Orders</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Orders')}>
-            <ChevronRight size={20} color={theme.colors.primary} />
-          </TouchableOpacity>
-        </View>
-        
-        {loading ? (
-          <View style={styles.centered}>
-            <ActivityIndicator size="large" color={theme.colors.primary} />
-          </View>
-        ) : pastOrders.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Package size={32} color={theme.colors.text.secondary} />
-            <Text style={styles.emptyText}>No past orders</Text>
-            <Text style={styles.emptySubtext}>
-              Completed orders will appear here
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.ordersList}>
-            {pastOrders.slice(0, 3).map(order => renderOrderCard(order, true))}
-          </View>
-        )}
-      </View>
-      
       {/* Earnings Summary Card */}
       <View style={styles.earningsCard}>
         <View style={styles.earningsHeader}>
@@ -663,31 +1072,39 @@ export default function DriverHomeScreen({ navigation }) {
           <Text style={styles.earningsPeriod}>This Week</Text>
         </View>
         
-        <View style={styles.earningsAmount}>
-          <Text style={styles.earningsValue}>$245.50</Text>
-          <Text style={styles.earningsChange}>+12.5% from last week</Text>
-        </View>
-        
-        <View style={styles.earningsStats}>
-          <View style={styles.earningsStat}>
-            <Text style={styles.statsValue}>18</Text>
-            <Text style={styles.statsLabel}>Deliveries</Text>
+        {loading ? (
+          <View style={styles.earningsLoading}>
+            <ActivityIndicator size="small" color={extendedTheme.colors.primary} />
+            <Text style={styles.loadingText}>Loading earnings data...</Text>
           </View>
-          
-          <View style={styles.earningsDivider} />
-          
-          <View style={styles.earningsStat}>
-            <Text style={styles.statsValue}>124.6</Text>
-            <Text style={styles.statsLabel}>Kilometers</Text>
-          </View>
-          
-          <View style={styles.earningsDivider} />
-          
-          <View style={styles.earningsStat}>
-            <Text style={styles.statsValue}>4.8</Text>
-            <Text style={styles.statsLabel}>Rating</Text>
-          </View>
-        </View>
+        ) : (
+          <>
+            <View style={styles.earningsAmount}>
+              <Text style={styles.earningsValue}>${earnings.currentWeekEarnings.toFixed(2)}</Text>
+            </View>
+            
+            <View style={styles.earningsStats}>
+              <View style={styles.earningsStat}>
+                <Text style={styles.statsValue}>{earnings.deliveryCount}</Text>
+                <Text style={styles.statsLabel}>Deliveries</Text>
+              </View>
+              
+              <View style={styles.earningsDivider} />
+              
+              <View style={styles.earningsStat}>
+                <Text style={styles.statsValue}>{earnings.totalDistance.toFixed(1)}</Text>
+                <Text style={styles.statsLabel}>Kilometers</Text>
+              </View>
+              
+              <View style={styles.earningsDivider} />
+              
+              <View style={styles.earningsStat}>
+                <Text style={styles.statsValue}>{earnings.rating.toFixed(1)}</Text>
+                <Text style={styles.statsLabel}>Rating</Text>
+              </View>
+            </View>
+          </>
+        )}
       </View>
       
       {/* Delivery Request Modal */}
@@ -699,12 +1116,16 @@ export default function DriverHomeScreen({ navigation }) {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>New Delivery Request</Text>
+              <Text style={styles.modalTitle}>New Order Assigned</Text>
               <Text style={styles.modalTimer}>{requestTimeLeft}s</Text>
             </View>
             
             {currentRequest && (
               <>
+                <View style={styles.assignedTag}>
+                  <Text style={styles.assignedTagText}>This order has been assigned to you</Text>
+                </View>
+                
                 <View style={styles.requestDetails}>
                   <View style={styles.requestDetail}>
                     <Text style={styles.requestDetailLabel}>Customer</Text>
@@ -732,28 +1153,55 @@ export default function DriverHomeScreen({ navigation }) {
                   </View>
                 </View>
                 
-                <View style={styles.modalActions}>
-                  <TouchableOpacity 
-                    style={[styles.modalAction, styles.rejectAction]}
-                    onPress={handleRejectRequest}
-                  >
-                    <X size={18} color="#FFFFFF" />
-                    <Text style={styles.modalActionText}>Decline</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={[styles.modalAction, styles.acceptAction]}
-                    onPress={handleAcceptRequest}
-                  >
-                    <Check size={18} color="#FFFFFF" />
-                    <Text style={styles.modalActionText}>Accept</Text>
-                  </TouchableOpacity>
-                </View>
+                {/* Check if driver has active orders */}
+                {currentOrders.some(order => ['accepted', 'picked_up', 'in_transit'].includes(order.status)) ? (
+                  <>
+                    <View style={styles.warningContainer}>
+                      <Text style={styles.modalWarningText}>
+                        You have an active delivery in progress and cannot accept new orders at this time.
+                      </Text>
+                    </View>
+                    <TouchableOpacity 
+                      style={[styles.modalAction, styles.rejectAction]}
+                      onPress={handleRejectRequest}
+                    >
+                      <X size={18} color="#FFFFFF" />
+                      <Text style={styles.modalActionText}>Close</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <View style={styles.modalActions}>
+                    <TouchableOpacity 
+                      style={[styles.modalAction, styles.rejectAction]}
+                      onPress={handleRejectRequest}
+                    >
+                      <X size={18} color="#FFFFFF" />
+                      <Text style={styles.modalActionText}>Decline</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      style={[styles.modalAction, styles.acceptAction]}
+                      onPress={handleAcceptRequest}
+                    >
+                      <Check size={18} color="#FFFFFF" />
+                      <Text style={styles.modalActionText}>Accept</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
               </>
             )}
           </View>
         </View>
       </Modal>
+
+      {/* Snackbar notification */}
+      {snackbarVisible && (
+        <View style={styles.snackbarContainer}>
+          <View style={styles.snackbar}>
+            <Text style={styles.snackbarText}>{snackbarMessage}</Text>
+          </View>
+        </View>
+      )}
     </ScrollView>
   );
 }
@@ -761,7 +1209,7 @@ export default function DriverHomeScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: extendedTheme.colors.background,
   },
   content: {
     paddingBottom: 40,
@@ -770,7 +1218,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
     paddingBottom: 16,
-    backgroundColor: theme.colors.background,
+    backgroundColor: extendedTheme.colors.background,
   },
   headerTop: {
     flexDirection: 'row',
@@ -785,7 +1233,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: theme.colors.primary,
+    backgroundColor: extendedTheme.colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -793,27 +1241,27 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 20,
     fontWeight: '600',
-    fontFamily: theme.typography.fontFamily.semibold,
+    fontFamily: extendedTheme.typography.fontFamily.semibold,
   },
   userText: {
     marginLeft: 12,
   },
   greeting: {
     fontSize: 14,
-    color: theme.colors.text.secondary,
-    fontFamily: theme.typography.fontFamily.regular,
+    color: extendedTheme.colors.text.secondary,
+    fontFamily: extendedTheme.typography.fontFamily.regular,
   },
   userName: {
     fontSize: 20,
     fontWeight: '600',
-    color: theme.colors.text.primary,
-    fontFamily: theme.typography.fontFamily.semibold,
+    color: extendedTheme.colors.text.primary,
+    fontFamily: extendedTheme.typography.fontFamily.semibold,
   },
   notificationButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: theme.colors.backgroundAlt,
+    backgroundColor: extendedTheme.colors.backgroundAlt,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -849,13 +1297,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#FFFFFF',
     marginBottom: 4,
-    fontFamily: theme.typography.fontFamily.semibold,
+    fontFamily: extendedTheme.typography.fontFamily.semibold,
   },
   toggleDescription: {
     fontSize: 14,
     color: 'rgba(255, 255, 255, 0.8)',
     maxWidth: '80%',
-    fontFamily: theme.typography.fontFamily.regular,
+    fontFamily: extendedTheme.typography.fontFamily.regular,
   },
   section: {
     marginHorizontal: 16,
@@ -870,8 +1318,8 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: theme.colors.text.primary,
-    fontFamily: theme.typography.fontFamily.semibold,
+    color: extendedTheme.colors.text.primary,
+    fontFamily: extendedTheme.typography.fontFamily.semibold,
   },
   centered: {
     alignItems: 'center',
@@ -881,18 +1329,18 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 8,
     fontSize: 14,
-    color: theme.colors.text.secondary,
-    fontFamily: theme.typography.fontFamily.regular,
+    color: extendedTheme.colors.text.secondary,
+    fontFamily: extendedTheme.typography.fontFamily.regular,
   },
   errorText: {
     marginTop: 8,
     fontSize: 14,
-    color: theme.colors.danger,
-    fontFamily: theme.typography.fontFamily.medium,
+    color: extendedTheme.colors.danger,
+    fontFamily: extendedTheme.typography.fontFamily.medium,
   },
   emptyContainer: {
     alignItems: 'center',
-    backgroundColor: theme.colors.backgroundAlt,
+    backgroundColor: extendedTheme.colors.backgroundAlt,
     padding: 24,
     borderRadius: 12,
     marginBottom: 16,
@@ -900,22 +1348,22 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     fontWeight: '600',
-    color: theme.colors.text.primary,
+    color: extendedTheme.colors.text.primary,
     marginTop: 12,
     marginBottom: 4,
-    fontFamily: theme.typography.fontFamily.semibold,
+    fontFamily: extendedTheme.typography.fontFamily.semibold,
   },
   emptySubtext: {
     fontSize: 14,
-    color: theme.colors.text.secondary,
+    color: extendedTheme.colors.text.secondary,
     textAlign: 'center',
-    fontFamily: theme.typography.fontFamily.regular,
+    fontFamily: extendedTheme.typography.fontFamily.regular,
   },
   ordersList: {
     marginBottom: 8,
   },
   orderCard: {
-    backgroundColor: theme.colors.backgroundAlt,
+    backgroundColor: extendedTheme.colors.backgroundAlt,
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
@@ -1101,11 +1549,6 @@ const styles = StyleSheet.create({
     fontFamily: theme.typography.fontFamily.bold,
     marginBottom: 4,
   },
-  earningsChange: {
-    fontSize: 14,
-    color: '#50C878',
-    fontFamily: theme.typography.fontFamily.medium,
-  },
   earningsStats: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1269,5 +1712,113 @@ const styles = StyleSheet.create({
     backgroundColor: '#50C878',
     flex: 1,
     marginLeft: 8,
+  },
+  disabledButton: {
+    backgroundColor: extendedTheme.colors.disabled,
+    opacity: 0.7,
+  },
+  warningText: {
+    fontSize: 12,
+    color: extendedTheme.colors.warning,
+    fontFamily: extendedTheme.typography.fontFamily.regular,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  warningContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 8,
+    padding: 8,
+    marginBottom: 16,
+  },
+  modalWarningText: {
+    fontSize: 14,
+    color: extendedTheme.colors.text.primary,
+    fontFamily: extendedTheme.typography.fontFamily.regular,
+    textAlign: 'center',
+  },
+  assignedOrderCard: {
+    borderLeftWidth: 4,
+    borderLeftColor: extendedTheme.colors.primary,
+  },
+  assignedBadge: {
+    backgroundColor: 'rgba(157, 118, 232, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    marginLeft: 8,
+  },
+  assignedText: {
+    fontSize: 10,
+    fontFamily: extendedTheme.typography.fontFamily.medium,
+    color: extendedTheme.colors.primary,
+  },
+  assignedTag: {
+    backgroundColor: 'rgba(157, 118, 232, 0.15)',
+    borderRadius: 8,
+    padding: 8,
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  assignedTagText: {
+    fontSize: 14,
+    color: extendedTheme.colors.primary,
+    fontFamily: extendedTheme.typography.fontFamily.medium,
+  },
+  earningsLoading: {
+    paddingVertical: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  countdownContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 149, 0, 0.15)',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+    marginTop: 4,
+  },
+  countdownUrgentContainer: {
+    backgroundColor: 'rgba(231, 76, 60, 0.15)',
+  },
+  countdownText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FF9500',
+    marginLeft: 8,
+    fontFamily: theme.typography.fontFamily.semibold,
+  },
+  countdownUrgentText: {
+    color: '#e74c3c',
+  },
+  snackbarContainer: {
+    position: 'absolute',
+    bottom: 30,
+    left: 16,
+    right: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+  },
+  snackbar: {
+    backgroundColor: 'rgba(50, 50, 50, 0.9)',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+    width: '100%',
+  },
+  snackbarText: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    fontFamily: theme.typography.fontFamily.medium,
+    textAlign: 'center',
   },
 }); 

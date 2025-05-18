@@ -154,7 +154,7 @@ export function useAuth() {
   }, [initialized]);
 
   // Function to attempt user creation with email and password
-  const signUp = async (email: string, password: string, displayName: string, role: UserRole = 'customer') => {
+  const signUp = async (email: string, password: string, displayName: string, phone: string, role: UserRole = 'customer') => {
     setLoading(true);
     setError(null);
     try {
@@ -165,14 +165,29 @@ export function useAuth() {
       // Update display name
       await updateProfile(userCredential.user, { displayName });
       
-      // Create user document in Firestore
-      const userData: Omit<User, 'id'> = {
+      // Create base user data
+      const baseUserData = {
         email,
         name: displayName,
-        phone: '',
+        phone,
         role,
         createdAt: new Date(),
       };
+      
+      // Add driver-specific fields if the role is 'driver'
+      let userData: any;
+      if (role === 'driver') {
+        userData = {
+          ...baseUserData,
+          status: 'pending',
+          isOnline: false,
+          rating: 0,
+          deliveryCount: 0,
+          joinDate: new Date()
+        };
+      } else {
+        userData = baseUserData;
+      }
       
       await setDoc(doc(db, 'users', uid), userData);
       

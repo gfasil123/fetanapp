@@ -1,4 +1,4 @@
-export type UserRole = 'customer';
+export type UserRole = 'customer' | 'driver';
 
 export interface User {
   id: string;
@@ -11,7 +11,17 @@ export interface User {
   avatar?: string;
 }
 
-// Driver interface removed - only customer functionality is needed
+// Driver interface 
+export interface Driver extends User {
+  role: 'driver';
+  status?: string;
+  isOnline?: boolean;
+  rating?: number;
+  deliveryCount?: number;
+  currentLocation?: any; // GeoPoint type from Firestore
+  lastLocationUpdate?: Date;
+  lastDeliveryAt?: Date;
+}
 
 export interface Customer extends User {
   role: 'customer';

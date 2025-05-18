@@ -41,7 +41,7 @@ export default function RegisterScreen({ navigation }) {
       console.log('Register attempt with:', email, 'as role:', role);
       
       // Use real Firebase authentication with selected role
-      const result = await auth.signUp(email, password, name, role);
+      const result = await auth.signUp(email, password, name, phone, role);
       
       if (result.success) {
         // Registration successful, update the user's phone number in their profile
