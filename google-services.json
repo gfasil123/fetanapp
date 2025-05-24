@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "104102793060",
+    "project_id": "sample-firebase-ai-app-149e5",
+    "storage_bucket": "sample-firebase-ai-app-149e5.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:104102793060:android:e7a2da615969dca962b471",
+        "android_client_info": {
+          "package_name": "com.fetanapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA7CBcSMCc5puHt6hduqq06cDP1YUmAg7E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

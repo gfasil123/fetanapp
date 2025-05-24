@@ -4,10 +4,10 @@ module.exports = function(api) {
   return {
     presets: ['babel-preset-expo'],
     plugins: [
-      // Load environment variables from .env file
+      // Load environment variables from env.dev file
       ['module:react-native-dotenv', {
         moduleName: '@env',
-        path: '.env',
+        path: './env.dev',
         safe: false,
         allowUndefined: true
       }],

@@ -1,3 +1,7 @@
+// Load environment variables from env.dev file
+import { config } from 'dotenv';
+config({ path: './env.dev' });
+
 // Expo config with support for environment variables
 // Note: In a real app, you'd typically load env vars from a .env file using a package like dotenv
 

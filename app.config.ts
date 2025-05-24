@@ -1,4 +1,7 @@
-import 'dotenv/config';
+import { config } from 'dotenv';
+
+// Load environment variables from env.dev file
+config({ path: './env.dev' });
 
 export default {
   expo: {
