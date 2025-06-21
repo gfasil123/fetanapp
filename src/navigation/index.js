@@ -6,6 +6,7 @@ import TabNavigator from './TabNavigator';
 // Import screens
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
+import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import CreateOrderScreen from '../screens/CreateOrderScreen';
 import OrderDetailsScreen from '../screens/OrderDetailsScreen';
 
@@ -30,6 +31,7 @@ export default function AppNavigation() {
         {/* Auth screens */}
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Register" component={RegisterScreen} />
+        <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
         
         {/* App screens */}
         <Stack.Screen name="Main" component={TabNavigator} />

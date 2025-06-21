@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native
 import { Order } from '../types';
 import { PackageCheck, MapPin, Clock, Truck as TruckDelivery } from 'lucide-react-native';
 import { theme } from '../src/theme';
+import { OrderStatus, getStatusColor, getStatusDisplayName } from '../types/OrderStatus';
 
 // Extend the Order type to account for Firestore timestamp and totalAmount
 type ExtendedOrder = Order & {
@@ -20,24 +21,6 @@ type OrderItemProps = {
 
 export default function OrderItem({ order, userRole = 'customer', onPress }: OrderItemProps) {
   
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return '#FABD64'; // warning orange from theme
-      case 'accepted':
-        return theme.colors.primary; // primary purple
-      case 'picked_up':
-      case 'in_transit':
-        return '#FA6464'; // accent red from theme
-      case 'delivered':
-        return '#50C878'; // success green from theme
-      case 'cancelled':
-        return theme.colors.danger; // error red
-      default:
-        return theme.colors.text.tertiary;
-    }
-  };
-
   const formatDate = (date: Date) => {
     return date.toLocaleDateString('en-US', {
       month: 'short',
@@ -47,7 +30,8 @@ export default function OrderItem({ order, userRole = 'customer', onPress }: Ord
     });
   };
 
-  const statusText = order.status.charAt(0).toUpperCase() + order.status.slice(1).replace('_', ' ');
+  const statusText = getStatusDisplayName(order.status);
+  const statusColor = getStatusColor(order.status);
 
   return (
     <TouchableOpacity
@@ -60,7 +44,7 @@ export default function OrderItem({ order, userRole = 'customer', onPress }: Ord
           <PackageCheck size={20} color={theme.colors.primary} />
           <Text style={styles.orderId}>Order #{order.id.substring(0, 8)}</Text>
         </View>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(order.status) }]}>
+        <View style={[styles.statusBadge, { backgroundColor: statusColor }]}>
           <Text style={styles.statusText}>{statusText}</Text>
         </View>
       </View>

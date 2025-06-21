@@ -19,7 +19,7 @@ export const assignDriver = functions.firestore
       const driversSnapshot = await db
         .collection('users')
         .where('role', '==', 'driver')
-        .where('isOnline', '==', true)
+        .where('status', '==', 'available')
         .where('vehicleType', '==', order.vehicleType)
         .get();
 

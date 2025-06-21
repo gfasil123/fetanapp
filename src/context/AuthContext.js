@@ -5,7 +5,8 @@ import {
   signInWithEmailAndPassword, 
   signOut as firebaseSignOut,
   createUserWithEmailAndPassword,
-  updateProfile
+  updateProfile,
+  sendPasswordResetEmail
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
@@ -100,6 +101,7 @@ export const AuthProvider = ({ children }) => {
           name: userCredential.user.displayName || email.split('@')[0],
           role: 'customer',
           createdAt: new Date(),
+          joinDate: new Date(),
           favoriteDrivers: []
         };
         
@@ -109,6 +111,7 @@ export const AuthProvider = ({ children }) => {
           name: userCredential.user.displayName || email.split('@')[0],
           role: 'customer',
           createdAt: new Date(),
+          joinDate: new Date(),
           favoriteDrivers: []
         });
         
@@ -152,6 +155,7 @@ export const AuthProvider = ({ children }) => {
         phone,
         role,
         createdAt: new Date(),
+        joinDate: new Date(),
         favoriteDrivers: []
       };
       
@@ -160,11 +164,10 @@ export const AuthProvider = ({ children }) => {
       if (role === 'driver') {
         userData = {
           ...baseUserData,
-          status: 'pending',
+          status: 'offline',
           isOnline: false,
           rating: 0,
-          deliveryCount: 0,
-          joinDate: new Date()
+          deliveryCount: 0
         };
       } else {
         userData = baseUserData;
@@ -214,6 +217,42 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Reset password function
+  const resetPassword = async (email) => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      console.log(`Sending password reset email to: ${email}`);
+      await sendPasswordResetEmail(auth, email);
+      console.log('Password reset email sent successfully');
+      return { success: true };
+    } catch (error) {
+      console.error('Reset password error:', error);
+      let errorMessage = 'Failed to send reset email';
+      
+      // Handle specific Firebase errors
+      switch (error.code) {
+        case 'auth/user-not-found':
+          errorMessage = 'No account found with this email address';
+          break;
+        case 'auth/invalid-email':
+          errorMessage = 'Invalid email address';
+          break;
+        case 'auth/too-many-requests':
+          errorMessage = 'Too many requests. Please try again later';
+          break;
+        default:
+          errorMessage = error.message || 'Failed to send reset email';
+      }
+      
+      setError(errorMessage);
+      return { success: false, error: errorMessage };
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Clear error
   const clearError = () => {
     setError(null);
@@ -228,6 +267,7 @@ export const AuthProvider = ({ children }) => {
     signIn,
     signUp,
     signOut,
+    resetPassword,
     clearError,
   };
 

@@ -10,7 +10,8 @@ import {
   browserLocalPersistence,
   inMemoryPersistence,
   onIdTokenChanged,
-  getAuth
+  getAuth,
+  sendPasswordResetEmail
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
@@ -172,6 +173,7 @@ export function useAuth() {
         phone,
         role,
         createdAt: new Date(),
+        joinDate: new Date(),
       };
       
       // Add driver-specific fields if the role is 'driver'
@@ -179,11 +181,10 @@ export function useAuth() {
       if (role === 'driver') {
         userData = {
           ...baseUserData,
-          status: 'pending',
+          status: 'offline',
           isOnline: false,
           rating: 0,
-          deliveryCount: 0,
-          joinDate: new Date()
+          deliveryCount: 0
         };
       } else {
         userData = baseUserData;
@@ -280,7 +281,43 @@ export function useAuth() {
     }
   };
 
-  // Add a method to clear errors
+  // Reset password function
+  const resetPassword = async (email: string) => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      console.log(`Sending password reset email to: ${email}`);
+      await sendPasswordResetEmail(auth, email);
+      console.log('Password reset email sent successfully');
+      return { success: true };
+    } catch (err: any) {
+      console.error('Reset password error:', err);
+      let errorMessage = 'Failed to send reset email';
+      
+      // Handle specific Firebase errors
+      switch (err.code) {
+        case 'auth/user-not-found':
+          errorMessage = 'No account found with this email address';
+          break;
+        case 'auth/invalid-email':
+          errorMessage = 'Invalid email address';
+          break;
+        case 'auth/too-many-requests':
+          errorMessage = 'Too many requests. Please try again later';
+          break;
+        default:
+          errorMessage = err.message || 'Failed to send reset email';
+      }
+      
+      setError(errorMessage);
+      return { success: false, error: errorMessage };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Function to clear error state
   const clearError = () => {
     setError(null);
   };
@@ -479,6 +516,7 @@ export function useAuth() {
     signUp,
     signIn,
     signOut,
+    resetPassword,
     clearError,
     refreshAuthState,
     tryRestoreSession,

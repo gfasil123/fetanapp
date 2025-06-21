@@ -15,6 +15,7 @@ import {
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase/config';
 import { Order, DeliveryStatus, DeliveryType } from '../types';
+import { OrderStatus } from '../types/OrderStatus';
 
 export function useOrders(userId: string | null, role: string | null) {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -181,7 +182,7 @@ export function useOrders(userId: string | null, role: string | null) {
         } : undefined,
         price,
         distance,
-        status: 'pending',
+        status: OrderStatus.PENDING,
         createdAt: new Date(),
         notes
       };
@@ -218,8 +219,12 @@ export function useOrders(userId: string | null, role: string | null) {
       
       const updateData: any = { status };
       
-      if (status === 'delivered') {
+      if (status === OrderStatus.DELIVERED) {
         updateData.deliveredAt = Timestamp.now();
+      }
+      
+      if (status === OrderStatus.COMPLETED) {
+        updateData.completedAt = Timestamp.now();
       }
       
       await updateDoc(orderRef, updateData);

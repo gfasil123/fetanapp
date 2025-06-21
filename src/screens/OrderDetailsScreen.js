@@ -8,13 +8,15 @@ import {
   ActivityIndicator,
   Image,
   Platform,
+  Alert
 } from 'react-native';
-import { ArrowLeft, MapPin, Package, Clock, Truck, MessageCircle, Phone } from 'lucide-react-native';
+import { ArrowLeft, MapPin, Package, Clock, Truck, MessageCircle, Phone, Star } from 'lucide-react-native';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { theme } from '../theme';
 import Button from '../../components/Button';
 import { useAuth } from '../context/AuthContext';
+import { getStatusColor, getStatusDisplayName } from '../../types/OrderStatus';
 
 export default function OrderDetailsScreen({ route, navigation }) {
   const { orderId } = route.params;
@@ -25,64 +27,44 @@ export default function OrderDetailsScreen({ route, navigation }) {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    const fetchOrderDetails = async () => {
-      if (!orderId) {
-        setError('Order ID is missing');
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const orderDoc = await getDoc(doc(db, 'orders', orderId));
-        
-        if (orderDoc.exists()) {
-          const orderData = {
-            id: orderDoc.id,
-            ...orderDoc.data(),
-          };
-          
-          setOrder(orderData);
-          
-          // If there's a driver, fetch driver details
-          if (orderData.driverId) {
-            const driverDoc = await getDoc(doc(db, 'users', orderData.driverId));
-            
-            if (driverDoc.exists()) {
-              setDriver({
-                id: driverDoc.id,
-                ...driverDoc.data(),
-              });
-            }
-          }
-        } else {
-          setError('Order not found');
-        }
-      } catch (err) {
-        console.error('Error fetching order:', err);
-        setError('Failed to load order details');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchOrderDetails();
+    if (orderId) {
+      fetchOrderDetails();
+    }
   }, [orderId]);
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'pending':
-        return '#FFCC00'; // warning yellow
-      case 'accepted':
-        return '#3366FF'; // primary blue
-      case 'picked_up':
-      case 'in_transit':
-        return '#FF9500'; // accent orange
-      case 'delivered':
-        return '#34C759'; // success green
-      case 'cancelled':
-        return '#FF3B30'; // error red
-      default:
-        return '#999999';
+  const fetchOrderDetails = async () => {
+    try {
+      setLoading(true);
+      const orderRef = doc(db, 'orders', orderId);
+      const orderSnap = await getDoc(orderRef);
+      
+      if (orderSnap.exists()) {
+        const orderData = {
+          id: orderSnap.id,
+          ...orderSnap.data(),
+        };
+        
+        setOrder(orderData);
+        
+        // If there's a driver, fetch driver details
+        if (orderData.driverId) {
+          const driverDoc = await getDoc(doc(db, 'users', orderData.driverId));
+          
+          if (driverDoc.exists()) {
+            setDriver({
+              id: driverDoc.id,
+              ...driverDoc.data(),
+            });
+          }
+        }
+      } else {
+        setError('Order not found');
+      }
+    } catch (error) {
+      console.error('Error fetching order details:', error);
+      setError('Failed to load order details');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -145,7 +127,7 @@ export default function OrderDetailsScreen({ route, navigation }) {
         <View style={styles.section}>
           <View style={styles.statusContainer}>
             <View style={[styles.statusBadge, { backgroundColor: getStatusColor(order?.status) }]}>
-              <Text style={styles.statusText}>{order?.status?.charAt(0).toUpperCase() + order?.status?.slice(1).replace('_', ' ')}</Text>
+              <Text style={styles.statusText}>{getStatusDisplayName(order?.status)}</Text>
             </View>
             <Text style={styles.orderIdText}>Order #{order?.id.substring(0, 8)}</Text>
           </View>

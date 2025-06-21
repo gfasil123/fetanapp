@@ -264,7 +264,7 @@ export default function CreateOrderScreen() {
             driversData.push({
               id: driverDoc.id,
               ...driverDoc.data(),
-              status: 'Available' // Default status, you can fetch actual status if available
+              status: 'available' // Default status, you can fetch actual status if available
             } as Driver);
           }
         }
@@ -827,7 +827,7 @@ export default function CreateOrderScreen() {
                               <View 
                                 style={[
                                   styles.statusIndicator, 
-                                  { backgroundColor: driver.status === 'Available' ? '#4CAF50' : '#FFC107' }
+                                  { backgroundColor: driver.status === 'available' ? '#4CAF50' : '#FFC107' }
                                 ]} 
                               />
                               <Text style={styles.driverDetails}>

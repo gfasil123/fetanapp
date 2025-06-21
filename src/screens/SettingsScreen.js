@@ -162,7 +162,10 @@ export default function SettingsScreen({ navigation }) {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Security & Privacy</Text>
           
-          <TouchableOpacity style={styles.settingItem}>
+          <TouchableOpacity 
+            style={styles.settingItem}
+            onPress={() => navigation.navigate('ForgotPassword')}
+          >
             <View style={styles.settingContent}>
               <Lock size={22} color={theme.colors.text.primary} style={styles.settingIcon} />
               <Text style={styles.settingText}>Change Password</Text>

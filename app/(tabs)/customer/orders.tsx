@@ -81,6 +81,23 @@ export default function CustomerOrdersScreen() {
               <TouchableOpacity
                 style={[
                   styles.filterChip,
+                  statusFilter === 'assigned' && styles.activeFilterChip,
+                ]}
+                onPress={() => setStatusFilter('assigned')}
+              >
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    statusFilter === 'assigned' && styles.activeFilterChipText,
+                  ]}
+                >
+                  Assigned
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[
+                  styles.filterChip,
                   statusFilter === 'accepted' && styles.activeFilterChip,
                 ]}
                 onPress={() => setStatusFilter('accepted')}
@@ -126,6 +143,40 @@ export default function CustomerOrdersScreen() {
                   ]}
                 >
                   Delivered
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[
+                  styles.filterChip,
+                  statusFilter === 'completed' && styles.activeFilterChip,
+                ]}
+                onPress={() => setStatusFilter('completed')}
+              >
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    statusFilter === 'completed' && styles.activeFilterChipText,
+                  ]}
+                >
+                  Completed
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[
+                  styles.filterChip,
+                  statusFilter === 'cancelled' && styles.activeFilterChip,
+                ]}
+                onPress={() => setStatusFilter('cancelled')}
+              >
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    statusFilter === 'cancelled' && styles.activeFilterChipText,
+                  ]}
+                >
+                  Cancelled
                 </Text>
               </TouchableOpacity>
             </ScrollView>

@@ -41,6 +41,7 @@ import { theme } from '../theme';
 import { useFavoriteDrivers } from '../../hooks/useFavoriteDrivers';
 import { query, collection, getDocs, where, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
+import { OrderStatus } from '../../types/OrderStatus';
 
 const { width } = Dimensions.get('window');
 const cardWidth = width - 48;
@@ -105,13 +106,13 @@ export default function HomeTabScreen({ navigation }) {
       setRecentOrders(orders.slice(0, 2));
       
       // Extract unique driver IDs from recent orders
-      const completedOrders = orders.filter(order => 
-        order.status === 'delivered' || order.status === 'in_transit'
+      const activeOrders = orders.filter(order => 
+        order.status === OrderStatus.DELIVERED || order.status === OrderStatus.PICKED_UP
       );
       
       // Get unique driver IDs
       const uniqueDriverIds = Array.from(new Set(
-        completedOrders
+        activeOrders
           .filter(order => order.driverId) // Only orders with assigned drivers
           .map(order => order.driverId)
       ));
@@ -540,16 +541,16 @@ export default function HomeTabScreen({ navigation }) {
                   <View style={[
                     styles.orderStatusBadge, 
                     { 
-                      backgroundColor: order.status === 'delivered' 
+                      backgroundColor: order.status === OrderStatus.DELIVERED 
                         ? '#50C878' 
-                        : order.status === 'in_transit' 
+                        : order.status === OrderStatus.PICKED_UP 
                           ? '#FF9500' 
                           : '#9D76E8'
                     }
                   ]}>
                     <Text style={styles.orderStatusText}>
-                      {order.status === 'delivered' ? 'Delivered' : 
-                       order.status === 'in_transit' ? 'In Transit' : 'Pending'}
+                      {order.status === OrderStatus.DELIVERED ? 'Delivered' : 
+                       order.status === OrderStatus.PICKED_UP ? 'Picked Up' : 'Pending'}
                     </Text>
                   </View>
                 </View>
@@ -561,13 +562,11 @@ export default function HomeTabScreen({ navigation }) {
                       style={[
                         styles.statusProgressFill,
                         { 
-                          width: order.status === 'delivered' 
+                          width: order.status === OrderStatus.DELIVERED 
                             ? '100%' 
-                            : order.status === 'in_transit' 
+                            : order.status === OrderStatus.PICKED_UP 
                               ? '66%' 
-                              : order.status === 'accepted'
-                                ? '33%'
-                                : '10%' 
+                              : '10%' 
                         }
                       ]} 
                     />
@@ -587,7 +586,7 @@ export default function HomeTabScreen({ navigation }) {
                       <View style={[
                         styles.statusDot,
                         { 
-                          backgroundColor: ['accepted', 'in_transit', 'delivered'].includes(order.status) 
+                          backgroundColor: [OrderStatus.ACCEPTED, OrderStatus.PICKED_UP, OrderStatus.DELIVERED].includes(order.status) 
                             ? '#FF9500' 
                             : 'transparent',
                           borderColor: '#FF9500'
@@ -595,14 +594,14 @@ export default function HomeTabScreen({ navigation }) {
                       ]} />
                       <Text style={[
                         styles.statusStepText,
-                        ['accepted', 'in_transit', 'delivered'].includes(order.status) && styles.activeStatusText
-                      ]}>In Transit</Text>
+                        [OrderStatus.ACCEPTED, OrderStatus.PICKED_UP, OrderStatus.DELIVERED].includes(order.status) && styles.activeStatusText
+                      ]}>In Progress</Text>
                     </View>
                     <View style={styles.statusStep}>
                       <View style={[
                         styles.statusDot,
                         { 
-                          backgroundColor: order.status === 'delivered' 
+                          backgroundColor: order.status === OrderStatus.DELIVERED 
                             ? '#50C878' 
                             : 'transparent',
                           borderColor: '#50C878'
@@ -610,7 +609,7 @@ export default function HomeTabScreen({ navigation }) {
                       ]} />
                       <Text style={[
                         styles.statusStepText,
-                        order.status === 'delivered' && styles.activeStatusText
+                        order.status === OrderStatus.DELIVERED && styles.activeStatusText
                       ]}>Delivered</Text>
                     </View>
                   </View>

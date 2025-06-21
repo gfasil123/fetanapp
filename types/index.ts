@@ -1,3 +1,5 @@
+import { DriverStatusType } from './DriverStatus';
+
 export type UserRole = 'customer' | 'driver';
 
 export interface User {
@@ -8,13 +10,14 @@ export interface User {
   address?: string;
   role: UserRole;
   createdAt: Date;
+  joinDate: Date;
   avatar?: string;
 }
 
 // Driver interface 
 export interface Driver extends User {
   role: 'driver';
-  status?: string;
+  status?: DriverStatusType;
   isOnline?: boolean;
   rating?: number;
   deliveryCount?: number;
@@ -37,10 +40,12 @@ export interface Customer extends User {
 
 export type DeliveryStatus = 
   | 'pending' 
+  | 'assigned'
   | 'accepted' 
   | 'picked_up' 
-  | 'in_transit' 
   | 'delivered' 
+  | 'completed'
+  | 'blocked'
   | 'cancelled';
 
 export type DeliveryType = 'standard' | 'express' | 'same_day';

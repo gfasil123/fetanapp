@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -12,7 +12,9 @@ import {
   Dimensions,
   Modal,
   Alert,
-  Image
+  Image,
+  FlatList,
+  Linking
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { useOrders } from '../../hooks/useOrders';
@@ -30,12 +32,22 @@ import {
   ChevronRight,
   X,
   Check,
+  DollarSign,
+  Phone,
+  Star,
+  TrendingUp,
+  Calendar,
+  BarChart3,
+  AlertTriangle
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../theme';
-import { collection, doc, updateDoc, getDoc, increment, GeoPoint } from 'firebase/firestore';
+import { collection, doc, updateDoc, getDoc, increment, GeoPoint, query, where, onSnapshot, orderBy, limit, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import * as Location from 'expo-location';
+import { StatusBar } from 'expo-status-bar';
+import { OrderStatus } from '../../types/OrderStatus';
+import { DriverStatus, getDriverStatusColor, getDriverStatusDisplayName, getDriverStatusDescription, isDriverOnline, canAcceptOrders } from '../../types/DriverStatus';
 
 const { width } = Dimensions.get('window');
 const STATUS_COLORS = {
@@ -62,8 +74,7 @@ export default function DriverHomeScreen({ navigation }) {
   const { user } = useAuth();
   const { orders, loading, error, fetchOrders } = useOrders(user?.id || null, user?.role || null);
   const earnings = useDriverEarnings(orders, user?.id);
-  const [isOnline, setIsOnline] = useState(false);
-  const [isBusy, setIsBusy] = useState(false);
+  const [driverStatus, setDriverStatus] = useState(DriverStatus.OFFLINE);
   const [currentOrders, setCurrentOrders] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [showDeliveryRequestModal, setShowDeliveryRequestModal] = useState(false);
@@ -147,20 +158,20 @@ export default function DriverHomeScreen({ navigation }) {
     setRefreshing(true);
     try {
       if (fetchOrders) await fetchOrders();
-      await updateDriverStatus(isOnline, isBusy);
+      // No need to update driver status on refresh - it's already managed by the toggle
     } catch (error) {
       console.error('Error refreshing data:', error);
     } finally {
       setRefreshing(false);
     }
-  }, [fetchOrders, isOnline, isBusy]);
+  }, [fetchOrders]);
 
   // Filter orders into current and incoming
   useEffect(() => {
     if (orders) {
       // Only show pending or assigned orders that are assigned to this driver
       const incoming = orders.filter(order => 
-        (order.status === 'pending' || order.status === 'assigned') && 
+        (order.status === OrderStatus.PENDING || order.status === OrderStatus.ASSIGNED) && 
         order.driverId === user?.id
       );
       setIncomingRequests(incoming);
@@ -177,8 +188,8 @@ export default function DriverHomeScreen({ navigation }) {
   // Simulated delivery request 
   // Note: In a real app, this would come from a Firebase Cloud Function or similar
   useEffect(() => {
-    // Only show delivery request if driver is online and a simulation is needed
-    if (isOnline && !showDeliveryRequestModal && Math.random() < 0.1) {
+    // Only show delivery request if driver is available and a simulation is needed
+    if (driverStatus === DriverStatus.AVAILABLE && !showDeliveryRequestModal && Math.random() < 0.1) {
       // Simulate a random delivery request coming in
       const simulatedRequest = {
         id: 'request-' + Math.floor(Math.random() * 1000),
@@ -209,7 +220,7 @@ export default function DriverHomeScreen({ navigation }) {
       setShowDeliveryRequestModal(true);
       setRequestTimeLeft(20);
     }
-  }, [isOnline, showDeliveryRequestModal, user?.id]);
+  }, [driverStatus, showDeliveryRequestModal, user?.id]);
 
   // Countdown timer for delivery request
   useEffect(() => {
@@ -239,8 +250,14 @@ export default function DriverHomeScreen({ navigation }) {
         
         if (userDoc.exists()) {
           const userData = userDoc.data();
-          setIsOnline(userData.isOnline || false);
-          setIsBusy(userData.status === 'Busy');
+          // Map old status system to new enum
+          if (userData.status) {
+            setDriverStatus(userData.status);
+          } else if (userData.isOnline) {
+            setDriverStatus(userData.status === 'Busy' ? DriverStatus.BUSY : DriverStatus.AVAILABLE);
+          } else {
+            setDriverStatus(DriverStatus.OFFLINE);
+          }
         }
       } catch (error) {
         console.error('Error loading driver status:', error);
@@ -261,8 +278,8 @@ export default function DriverHomeScreen({ navigation }) {
     return unsubscribe;
   }, [navigation, fetchOrders]);
 
-  // Update driver's online status in Firestore
-  const updateDriverStatus = async (status, busy = false) => {
+  // Update driver's status in Firestore
+  const updateDriverStatus = async (newStatus) => {
     if (!user?.id) return;
     
     try {
@@ -271,18 +288,14 @@ export default function DriverHomeScreen({ navigation }) {
       
       if (userDoc.exists()) {
         const updateData = {
-          isOnline: status,
+          status: newStatus,
+          isOnline: newStatus !== DriverStatus.OFFLINE, // false when offline, true for available/busy
           lastStatusUpdate: new Date()
         };
         
-        // If busy flag is provided, update the driver's status accordingly
-        if (busy !== undefined) {
-          updateData.status = busy ? 'Busy' : 'Available';
-          setIsBusy(busy); // Update the local state
-        }
-        
         await updateDoc(userDocRef, updateData);
-        console.log(`Driver status updated to: ${status ? 'Online' : 'Offline'}, Status: ${busy ? 'Busy' : 'Available'}`);
+        setDriverStatus(newStatus);
+        console.log(`Driver status updated to: ${getDriverStatusDisplayName(newStatus)}, isOnline: ${newStatus !== DriverStatus.OFFLINE}`);
       }
     } catch (error) {
       console.error('Error updating driver status:', error);
@@ -292,16 +305,13 @@ export default function DriverHomeScreen({ navigation }) {
   
   // Toggle driver's online status
   const toggleOnlineStatus = async (value) => {
-    setIsOnline(value);
-    // When turning offline, also set not busy
-    // When turning online, maintain previous busy state (most likely not busy)
     if (!value) {
-      setIsBusy(false);
-      await updateDriverStatus(false, false);
+      // Going offline
+      await updateDriverStatus(DriverStatus.OFFLINE);
     } else {
-      // When coming online, update location first
+      // Going online - set to available
       await updateDriverLocation();
-      await updateDriverStatus(true, false); // When toggling to online, set as Available
+      await updateDriverStatus(DriverStatus.AVAILABLE);
     }
   };
 
@@ -365,7 +375,7 @@ export default function DriverHomeScreen({ navigation }) {
       });
       
       // Set driver status to busy when accepting an order
-      await updateDriverStatus(true, true);
+      await updateDriverStatus(DriverStatus.BUSY);
       
       // Refresh orders list
       if (fetchOrders) await fetchOrders();
@@ -389,15 +399,15 @@ export default function DriverHomeScreen({ navigation }) {
       const orderRef = doc(db, 'orders', orderId);
       await updateDoc(orderRef, {
         status: newStatus,
-        ...(newStatus === 'picked_up' ? { pickedUpAt: new Date() } : {}),
-        ...(newStatus === 'delivered' ? { deliveredAt: new Date() } : {})
+        ...(newStatus === OrderStatus.PICKED_UP ? { pickedUpAt: new Date() } : {}),
+        ...(newStatus === OrderStatus.DELIVERED ? { deliveredAt: new Date() } : {})
       });
       
       // Update driver status based on order status
-      if (newStatus === 'picked_up') {
+      if (newStatus === OrderStatus.PICKED_UP) {
         // Set driver status to busy when picking up an order
-        await updateDriverStatus(true, true);
-      } else if (newStatus === 'delivered') {
+        await updateDriverStatus(DriverStatus.BUSY);
+      } else if (newStatus === OrderStatus.DELIVERED) {
         // Set driver status back to available when delivery is complete
         // Also update the lastDeliveryAt timestamp on the driver record
         const userDocRef = doc(db, 'users', user.id);
@@ -405,15 +415,15 @@ export default function DriverHomeScreen({ navigation }) {
           lastDeliveryAt: new Date(),
           deliveryCount: increment(1)
         });
-        await updateDriverStatus(true, false);
+        await updateDriverStatus(DriverStatus.AVAILABLE);
       }
       
       // Refresh orders list
       if (fetchOrders) await fetchOrders();
       
       Alert.alert(
-        newStatus === 'picked_up' ? 'Pickup Confirmed' : 'Delivery Confirmed',
-        newStatus === 'picked_up' ? 'You have confirmed package pickup.' : 'You have completed this delivery.'
+        newStatus === OrderStatus.PICKED_UP ? 'Pickup Confirmed' : 'Delivery Confirmed',
+        newStatus === OrderStatus.PICKED_UP ? 'You have confirmed package pickup.' : 'You have completed this delivery.'
       );
     } catch (error) {
       console.error('Error updating order status:', error);
@@ -437,7 +447,7 @@ export default function DriverHomeScreen({ navigation }) {
       });
       
       // Ensure driver status remains busy during transit
-      await updateDriverStatus(true, true);
+      await updateDriverStatus(DriverStatus.BUSY);
       
       // Refresh orders list
       if (fetchOrders) await fetchOrders();
@@ -483,7 +493,7 @@ export default function DriverHomeScreen({ navigation }) {
       });
       
       // Set driver status back to available when rejecting an order
-      await updateDriverStatus(true, false);
+      await updateDriverStatus(DriverStatus.AVAILABLE);
       
       // Refresh orders list
       if (fetchOrders) await fetchOrders();
@@ -507,7 +517,7 @@ export default function DriverHomeScreen({ navigation }) {
     }
     
     // If driver is online, set up periodic location updates
-    if (isOnline && locationPermissionGranted) {
+    if (isDriverOnline(driverStatus) && locationPermissionGranted) {
       // Update location every 5 minutes (300000 ms)
       // In a production app, you might want to use a more sophisticated solution
       // like background location tracking or geofencing
@@ -524,7 +534,7 @@ export default function DriverHomeScreen({ navigation }) {
         clearInterval(interval);
       };
     }
-  }, [isOnline, locationPermissionGranted]);
+  }, [driverStatus, locationPermissionGranted]);
 
   // Clean up interval on component unmount
   useEffect(() => {
@@ -548,7 +558,7 @@ export default function DriverHomeScreen({ navigation }) {
       
       // Set up new timers for each incoming request
       incomingRequests.forEach(order => {
-        if (order.status === 'pending' && order.driverId === user.id && !orderTimers[order.id]) {
+        if (order.status === OrderStatus.PENDING && order.driverId === user.id && !orderTimers[order.id]) {
           console.log(`Setting up 30-second timer for order ${order.id}`);
           
           // Create a timeout that will auto-unassign after 30 seconds
@@ -585,7 +595,7 @@ export default function DriverHomeScreen({ navigation }) {
       const newCountdowns = {};
       incomingRequests.forEach(order => {
         // Initialize countdown for any pending or assigned order assigned to this driver
-        if ((order.status === 'pending' || order.status === 'assigned') && 
+        if ((order.status === OrderStatus.PENDING || order.status === OrderStatus.ASSIGNED) && 
             order.driverId === user?.id && 
             !countdowns[order.id]) {
           console.log(`Setting up countdown for order ${order.id}`);
@@ -666,6 +676,9 @@ export default function DriverHomeScreen({ navigation }) {
     const hasActiveOrders = currentOrders.some(order => 
       ['accepted', 'picked_up', 'in_transit'].includes(order.status)
     );
+    
+    // Check if driver can accept new orders
+    const canAcceptNewOrders = canAcceptOrders(driverStatus);
 
     // Check if this order is directly assigned to this driver
     const isAssignedToMe = order.driverId === user?.id;
@@ -673,7 +686,7 @@ export default function DriverHomeScreen({ navigation }) {
     // Get countdown for this order if it exists
     const countdown = countdowns[order.id] || 0;
     const showCountdown = isAssignedToMe && 
-      (order.status === 'pending' || order.status === 'assigned') && 
+      (order.status === OrderStatus.PENDING || order.status === OrderStatus.ASSIGNED) && 
       countdown > 0;
     
     console.log(`Order ${order.id} - showCountdown: ${showCountdown}, countdown: ${countdown}`);
@@ -870,20 +883,22 @@ export default function DriverHomeScreen({ navigation }) {
                 style={[
                   styles.actionButton, 
                   styles.acceptButton,
-                  hasActiveOrders && styles.disabledButton
+                  (!canAcceptNewOrders || hasActiveOrders) && styles.disabledButton
                 ]}
                 onPress={() => acceptOrder(order.id)}
-                disabled={updatingOrderStatus || hasActiveOrders}
+                disabled={updatingOrderStatus || !canAcceptNewOrders || hasActiveOrders}
               >
                 <CheckCircle size={16} color="#FFFFFF" />
                 <Text style={styles.actionButtonText}>
-                  {hasActiveOrders ? 'Unavailable' : 'Accept'}
+                  {!canAcceptNewOrders ? 'Unavailable' : 
+                   hasActiveOrders ? 'Unavailable' : 'Accept'}
                 </Text>
               </TouchableOpacity>
             </View>
-            {hasActiveOrders && (
+            {(!canAcceptNewOrders || hasActiveOrders) && (
               <Text style={styles.warningText}>
-                Complete your current delivery before accepting new orders
+                {!canAcceptNewOrders ? 'Go online to accept orders' : 
+                 'Complete your current delivery before accepting new orders'}
               </Text>
             )}
           </View>
@@ -958,12 +973,12 @@ export default function DriverHomeScreen({ navigation }) {
       {/* Availability Toggle Card */}
       <View style={styles.toggleCard}>
         <LinearGradient
-          colors={!isOnline ? 
-            ['#e74c3c', '#c0392b'] : // Offline
-            (isBusy ? 
+          colors={
+            driverStatus === DriverStatus.OFFLINE ? 
+              ['#e74c3c', '#c0392b'] : // Offline (red)
+            driverStatus === DriverStatus.BUSY ? 
               ['#FF9500', '#F58700'] : // Busy (orange)
               ['#50C878', '#3F9E5A']   // Available (green)
-            )
           }
           start={{x: 0, y: 0}}
           end={{x: 1, y: 0}}
@@ -972,25 +987,19 @@ export default function DriverHomeScreen({ navigation }) {
           <View style={styles.toggleContent}>
             <View>
               <Text style={styles.toggleLabel}>
-                {!isOnline ? 'You are Offline' : 
-                  (isBusy ? 'You are Busy' : 'You are Online')}
+                You are {getDriverStatusDisplayName(driverStatus)}
               </Text>
               <Text style={styles.toggleDescription}>
-                {!isOnline 
-                  ? 'Switch online to start receiving delivery requests' 
-                  : (isBusy 
-                      ? 'Currently handling an order' 
-                      : 'You are available to receive delivery requests')
-                }
+                {getDriverStatusDescription(driverStatus)}
               </Text>
             </View>
             <Switch
-              value={isOnline}
+              value={isDriverOnline(driverStatus)}
               onValueChange={toggleOnlineStatus}
               trackColor={{ false: 'rgba(255, 255, 255, 0.3)', true: 'rgba(255, 255, 255, 0.3)' }}
-              thumbColor={isOnline ? '#FFFFFF' : '#FFFFFF'}
+              thumbColor={'#FFFFFF'}
               ios_backgroundColor="rgba(255, 255, 255, 0.3)"
-              disabled={isBusy} // Disable toggle when busy
+              disabled={driverStatus === DriverStatus.BUSY} // Disable toggle when busy
             />
           </View>
         </LinearGradient>
@@ -1017,7 +1026,7 @@ export default function DriverHomeScreen({ navigation }) {
             <Bell size={32} color={extendedTheme.colors.text.secondary} />
             <Text style={styles.emptyText}>No orders assigned to you</Text>
             <Text style={styles.emptySubtext}>
-              {isOnline 
+              {isDriverOnline(driverStatus) 
                 ? 'You will be notified when you are assigned new orders' 
                 : 'Go online to receive order assignments'}
             </Text>
@@ -1053,7 +1062,7 @@ export default function DriverHomeScreen({ navigation }) {
             <Package size={32} color={theme.colors.text.secondary} />
             <Text style={styles.emptyText}>No current orders</Text>
             <Text style={styles.emptySubtext}>
-              {isOnline 
+              {isDriverOnline(driverStatus) 
                 ? 'You will see new delivery requests here' 
                 : 'Go online to start receiving delivery requests'}
             </Text>
